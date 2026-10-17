@@ -31,12 +31,12 @@ def check_name(name: str) -> list[Finding]:
     suffixes = [s.lower().strip() for s in PurePath(name).suffixes]
     if "\u202e" in name:
         findings.append(Finding(
-            "RTLO", 40,
+            "RTLO", 60,
             "У назві прихований символ, що перевертає розширення (прийом RTLO)"))
     if (len(suffixes) >= 2 and suffixes[-1] in EXEC_EXTS
             and suffixes[-2] in DOC_EXTS):
         findings.append(Finding(
-            "DOUBLE_EXT", 40,
+            "DOUBLE_EXT", 60,
             f"Подвійне розширення: виглядає як документ, "
             f"а насправді {suffixes[-1]}"))
     return findings
@@ -51,10 +51,10 @@ def check_type(info: FileInfo) -> list[Finding]:
         return []
     if info.kind in REAL_EXEC_KINDS:
         return [Finding(
-            "DISGUISED_EXEC", 50,
+             "DISGUISED_EXEC", 70,
             f"Розширення {ext}, але всередині виконуваний файл ({info.kind})")]
     return [Finding(
-        "TYPE_MISMATCH", 25,
+        "TYPE_MISMATCH", 30,
         f"Розширення {ext}, але вміст виглядає як «{info.kind}»")]
 
 def check(info: FileInfo) -> list[Finding]:
