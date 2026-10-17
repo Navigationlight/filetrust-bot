@@ -25,3 +25,14 @@ def test_pdf_pretending_to_be_exe(tmp_path):
 def test_score_levels():
     assert "ВИСОКИЙ" in score([Finding("A", 70, "")])[1]
     assert score([Finding("A", 80, ""), Finding("B", 80, "")])[0] == 100
+def test_double_extension_is_high_risk():
+    total, verdict = score(check_name("invoice.pdf.exe"))
+    assert "ВИСОКИЙ" in verdict
+
+
+def test_type_mismatch_is_at_least_suspicious(tmp_path):
+    p = tmp_path / "x.bin"
+    p.write_bytes(b"<!DOCTYPE html><html><body>hi</body></html>")
+    info = inspect_file(p, "invoice.pdf")
+    total, verdict = score(check(info))
+    assert "ПІДОЗРІЛО" in verdict
