@@ -6,7 +6,7 @@ EXEC_EXTS = {".exe", ".scr", ".com", ".bat", ".cmd", ".js",
 DOC_EXTS = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
             ".txt", ".jpg", ".jpeg", ".png", ".zip", ".rar"}
 
-# розширення -> який вид файлу очікуємо
+# розширення і який вид файлу очікуємо
 EXPECTED_KIND = {
     ".pdf": "pdf",
     ".docx": "ooxml", ".xlsx": "ooxml", ".pptx": "ooxml",
