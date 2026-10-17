@@ -2,6 +2,9 @@ from filetrust.analyzers.common import check_name, check
 from filetrust.detect import inspect_file
 from filetrust.models import Finding
 from filetrust.scoring.engine import score
+import zipfile
+from filetrust.analyzers.archive import check_zip
+from filetrust.pipeline import analyze
 
 def ids(findings):
     return [f.id for f in findings]
@@ -36,3 +39,44 @@ def test_type_mismatch_is_at_least_suspicious(tmp_path):
     info = inspect_file(p, "invoice.pdf")
     total, verdict = score(check(info))
     assert "ПІДОЗРІЛО" in verdict
+
+def make_zip(path, files):
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, data in files.items():
+            z.writestr(name, data)
+
+
+def test_zip_with_exe(tmp_path):
+    p = tmp_path / "a.zip"
+    make_zip(p, {"setup.exe": b"MZ" + b"\x00" * 100})
+    info = inspect_file(p, "a.zip")
+    assert info.kind == "zip"
+    assert "ARCHIVE_EXEC" in ids(check_zip(info))
+
+
+def test_zip_clean(tmp_path):
+    p = tmp_path / "b.zip"
+    make_zip(p, {"photo.jpg": b"x", "notes.txt": b"hello"})
+    info = inspect_file(p, "b.zip")
+    assert check_zip(info) == []
+
+
+def test_zip_double_extension_inside(tmp_path):
+    p = tmp_path / "c.zip"
+    make_zip(p, {"invoice.pdf.exe": b"x"})
+    info = inspect_file(p, "c.zip")
+    assert "ARCHIVE_DOUBLE_EXT" in ids(check_zip(info))
+
+
+def test_zip_path_traversal(tmp_path):
+    p = tmp_path / "d.zip"
+    make_zip(p, {"../evil.txt": b"x"})
+    info = inspect_file(p, "d.zip")
+    assert "ARCHIVE_PATH_TRAVERSAL" in ids(check_zip(info))
+
+
+def test_pipeline_zip_with_exe_is_red(tmp_path):
+    p = tmp_path / "e.zip"
+    make_zip(p, {"setup.exe": b"MZ" + b"\x00" * 100})
+    info, findings = analyze(p, "documents.zip")
+    assert "ВИСОКИЙ" in score(findings)[1]
