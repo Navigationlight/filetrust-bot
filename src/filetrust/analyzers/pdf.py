@@ -1,9 +1,9 @@
-import ipaddress
+
 import re
 import zlib
 from collections import Counter
-from urllib.parse import urlparse
 
+from filetrust.analyzers.links import bad_link_reason
 from filetrust.analyzers.common import EXEC_EXTS
 from filetrust.models import FileInfo, Finding
 
@@ -20,8 +20,6 @@ FILE_RE = re.compile(rb"/(?:UF|F)\s*\(([^)]{1,120})\)")
 # імена, які варто перевіряти на приховане кодування
 WATCHED = {"JavaScript", "JS", "OpenAction", "AA", "Launch",
            "EmbeddedFile", "RichMedia", "URI"}
-SHORTENERS = {"bit.ly", "tinyurl.com", "t.co", "goo.gl", "is.gd", "cutt.ly",
-              "rebrand.ly", "ow.ly", "tiny.cc", "shorturl.at", "t.ly"}
 
 def _decode_name(raw: bytes) -> str:
     """/J#61vaScript -> JavaScript"""
@@ -44,24 +42,7 @@ def _object_streams(data: bytes):
             continue
 
 
-def _bad_link_reason(url: str) -> str | None:
-    try:
-        host = urlparse(url).hostname
-    except ValueError:
-        return None
-    if not host:
-        return None
-    host = host.lower()
-    try:
-        ipaddress.ip_address(host)
-        return "адреса IP замість домену"
-    except ValueError:
-        pass
-    if host in SHORTENERS:
-        return "скорочувач посилань"
-    if "xn--" in host:
-        return "домен у punycode (можлива підміна символів)"
-    return None
+
 
 def check_pdf(info: FileInfo) -> list[Finding]:
     with info.path.open("rb") as f:
@@ -120,7 +101,7 @@ def check_pdf(info: FileInfo) -> list[Finding]:
 
     bad_links = []
     for u in links:
-        why = _bad_link_reason(u)
+        why = bad_link_reason(u)
         if why:
             bad_links.append(f"{u[:80]} ({why})")
     if bad_links:

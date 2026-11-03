@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Callable
 from filetrust.detect import inspect_file
 from filetrust.models import FileInfo, Finding
-from filetrust.analyzers import common, archive, pdf
+from filetrust.analyzers import common, archive, pdf, html_page
 
 Analyzer = Callable[[FileInfo], list[Finding]]
 
@@ -10,6 +10,7 @@ Analyzer = Callable[[FileInfo], list[Finding]]
 ANALYZERS: dict[str, list[Analyzer]] = {
     "zip": [archive.check_zip],
     "pdf": [pdf.check_pdf],
+    "html": [html_page.check_html],
 }
 
 
