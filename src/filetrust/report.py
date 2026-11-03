@@ -1,4 +1,15 @@
+import re
 from filetrust.models import FileInfo, Finding
+
+URL_RE = re.compile(r"https?://[^\s)»]+")
+
+
+def defang(text: str) -> str:
+    
+    def fix(m):
+        return m.group(0).replace("http", "hxxp", 1).replace(".", "[.]")
+    return URL_RE.sub(fix, text)
+
 
 def format_report(info: FileInfo, total: int, verdict: str,
                   findings: list[Finding]) -> str:
@@ -13,7 +24,7 @@ def format_report(info: FileInfo, total: int, verdict: str,
     if findings:
         lines.append("Знахідки:")
         for i, f in enumerate(findings, 1):
-            lines.append(f"{i}. {f.text} (+{f.points})")
+            lines.append(f"{i}. {defang(f.text)} (+{f.points})")
     else:
         lines.append("Підозрілих ознак не знайдено.")
         lines.append("Це не гарантія безпеки, а лише результат наших перевірок.")

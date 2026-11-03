@@ -7,6 +7,7 @@ from filetrust.analyzers.archive import check_zip
 from filetrust.pipeline import analyze
 import zlib
 from filetrust.analyzers.pdf import check_pdf
+from filetrust.report import defang
 
 def ids(findings):
     return [f.id for f in findings]
@@ -155,3 +156,8 @@ def test_pdf_embedded_exe(tmp_path):
                 b"2 0 obj\n<< /F (invoice.exe) /EF << /F 1 0 R >> >>\nendobj")
     findings = check_pdf(inspect_file(p, "i.pdf"))
     assert "PDF_EMBEDDED_EXEC" in ids(findings)
+
+def test_defang_makes_links_inert():
+    assert (defang("Посилання: http://192.168.0.10/login (IP)")
+            == "Посилання: hxxp://192[.]168[.]0[.]10/login (IP)")
+    assert "[.]" not in defang("setup.exe")
