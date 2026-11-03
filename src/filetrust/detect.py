@@ -12,6 +12,9 @@ MIME_RULES = [
     ("application/x-pie-executable", "elf"),
     ("application/pdf", "pdf"),
     ("application/vnd.openxmlformats-officedocument", "ooxml"),
+    ("application/vnd.ms-word.", "ooxml"),         # docm, dotm
+    ("application/vnd.ms-excel.", "ooxml"),        # xlsm, xlsb
+    ("application/vnd.ms-powerpoint.", "ooxml"),   # pptm
     ("application/msword", "ole"),
     ("application/vnd.ms-", "ole"),
     ("application/x-ole-storage", "ole"),
