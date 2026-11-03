@@ -57,5 +57,20 @@ def check_type(info: FileInfo) -> list[Finding]:
         "TYPE_MISMATCH", 30,
         f"Розширення {ext}, але вміст виглядає як «{info.kind}»")]
 
+def check_exec(info: FileInfo) -> list[Finding]:
+    
+    ext = PurePath(info.name).suffix.lower().strip()
+    if ext not in EXEC_EXTS and info.kind not in REAL_EXEC_KINDS:
+        return []
+    return [Finding(
+        "EXEC_FILE", 60,
+        "Це виконуваний файл або скрипт: запускайте його лише тоді, "
+        "коли повністю довіряєте відправнику")]
+
+
 def check(info: FileInfo) -> list[Finding]:
-    return check_name(info.name) + check_type(info)
+    findings = check_name(info.name) + check_type(info)
+    
+    if not any(f.id == "DISGUISED_EXEC" for f in findings):
+        findings += check_exec(info)
+    return findings

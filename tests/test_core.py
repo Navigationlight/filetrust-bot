@@ -161,3 +161,16 @@ def test_defang_makes_links_inert():
     assert (defang("Посилання: http://192.168.0.10/login (IP)")
             == "Посилання: hxxp://192[.]168[.]0[.]10/login (IP)")
     assert "[.]" not in defang("setup.exe")
+def test_script_file_is_flagged(tmp_path):
+    p = tmp_path / "x.bin"
+    p.write_bytes(b"WScript.Echo('hi')")
+    info = inspect_file(p, "update.js")
+    assert "EXEC_FILE" in ids(check(info))
+    assert "ВИСОКИЙ" in score(check(info))[1]
+
+
+def test_plain_text_is_not_flagged(tmp_path):
+    p = tmp_path / "y.bin"
+    p.write_bytes(b"hello")
+    info = inspect_file(p, "notes.txt")
+    assert check(info) == []
