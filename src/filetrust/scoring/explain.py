@@ -34,6 +34,14 @@ _CATEGORY = {
     "PDF_EMBEDDED_FILE": CONT, "PDF_RICHMEDIA": CONT,
 }
 
+# перевірка посилань (analyzers/urlcheck.py)
+for _id in ("LINK_USERINFO", "LINK_IP", "LINK_SHORTENER", "LINK_PUNYCODE", "LINK_NO_TLS",
+            "LINK_RISKY_TLD", "LINK_BRAND", "LINK_LONG_HOST", "LINK_TEXT_MISMATCH",
+            "LINK_ODD_PORT"):
+    _CATEGORY[_id] = PHISH
+for _id in ("LINK_EXEC_DOWNLOAD", "LINK_DANGEROUS_SCHEME"):
+    _CATEGORY[_id] = CODE
+
 _STORY = {
     MASK: "файл маскується під інший тип",
     CODE: "містить код, який може виконатись",
@@ -52,7 +60,7 @@ def category_of(fid: str) -> str:
     return OTHER
 
 
-# Комбінації додають бали зверху,два слабкі сигнали разом небезпечніші за суму окремих.
+# Комбінації додають бали зверху, два слабкі сигнали разом небезпечніші за суму окремих.
 def _chains(findings: list[Finding]) -> list[Finding]:
     ids = {f.id for f in findings}
     cats = {category_of(i) for i in ids}
