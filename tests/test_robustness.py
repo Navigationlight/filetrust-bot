@@ -1,4 +1,4 @@
-
+"""Стійкість: обхід розпізнавання, повільні файли, випадкові дані."""
 import io
 import random
 import time
@@ -86,7 +86,7 @@ def test_pdf_launch(tmp_path):
     assert a.total >= 60
 
 
-# ---------- хибні спрацювання, чисті файли лишаються чистими ----------
+# ---------- хибні спрацювання: чисті файли лишаються чистими ----------
 def test_clean_files_stay_clean(tmp_path):
     clean = {
         "a.pdf": pdf(b"/Pages 2 0 R"),
@@ -104,7 +104,7 @@ def test_pdf_many_streams_is_fast(tmp_path):
     """Раніше PDF на 156 КБ аналізувався понад хвилину (регулярка працювала квадратично)."""
     for n in (200_000, 500_000):
         _, dt = run(tmp_path, "a.pdf", b"%PDF-1.4\n" + b"stream\nA" * n)
-        assert dt < SLOW_LIMIT, (n, dt)
+        assert dt < SLOW_LIMIT, f"{n}: {dt:.1f} с"
 
 
 def test_pdf_many_endstreams_and_crlf(tmp_path):
@@ -113,29 +113,35 @@ def test_pdf_many_endstreams_and_crlf(tmp_path):
     assert dt < SLOW_LIMIT
 
 
-@pytest.mark.parametrize("payload", [
-    b"<a href=" * 200_000,
-    b"<form " * 200_000,
-    b"A" * 5_000_000,
-    b"<script>" + b"eval(" * 300_000,
-    b"<meta http-equiv=refresh content=url=" * 100_000,
-])
-def test_html_adversarial_is_fast(tmp_path, payload):
-    _, dt = run(tmp_path, "a.html", b"<html>" + payload)
-    assert dt < SLOW_LIMIT
+# Вміст створюється всередині тесту: великі байти в параметрах засмічують вивід при падінні
+HTML_PAYLOADS = {
+    "a_href": lambda: b"<a href=" * 200_000,
+    "form": lambda: b"<form " * 200_000,
+    "plain_5mb": lambda: b"A" * 5_000_000,
+    "eval": lambda: b"<script>" + b"eval(" * 300_000,
+    "meta_refresh": lambda: b"<meta http-equiv=refresh content=url=" * 100_000,
+}
+OFFICE_PAYLOADS = {
+    "rel_open": lambda: b"<Relationship " * 100_000,
+    "rel_attr": lambda: b'<Relationship Target="http://a" ' * 100_000,
+    "instrtext": lambda: b"<w:instrText>" * 100_000,
+    "f_tag": lambda: b"<f " * 100_000,
+}
 
 
-@pytest.mark.parametrize("payload", [
-    b"<Relationship " * 100_000,
-    b'<Relationship Target="http://a" ' * 100_000,
-    b"<w:instrText>" * 100_000,
-    b"<f " * 100_000,
-])
-def test_office_adversarial_is_fast(tmp_path, payload):
+@pytest.mark.parametrize("key", list(HTML_PAYLOADS))
+def test_html_adversarial_is_fast(tmp_path, key):
+    _, dt = run(tmp_path, "a.html", b"<html>" + HTML_PAYLOADS[key]())
+    assert dt < SLOW_LIMIT, f"{key}: {dt:.1f} с"
+
+
+@pytest.mark.parametrize("key", list(OFFICE_PAYLOADS))
+def test_office_adversarial_is_fast(tmp_path, key):
+    payload = OFFICE_PAYLOADS[key]()
     data = make_zip({"[Content_Types].xml": b"<Types/>", "word/document.xml": payload,
                      "word/_rels/document.xml.rels": payload})
     _, dt = run(tmp_path, "a.docx", data)
-    assert dt < SLOW_LIMIT
+    assert dt < SLOW_LIMIT, f"{key}: {dt:.1f} с"
 
 
 def test_zip_with_many_entries(tmp_path):
