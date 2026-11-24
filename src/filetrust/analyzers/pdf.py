@@ -1,4 +1,3 @@
-
 import re
 import zlib
 from collections import Counter
@@ -22,13 +21,13 @@ WATCHED = {"JavaScript", "JS", "OpenAction", "AA", "Launch",
            "EmbeddedFile", "RichMedia", "URI"}
 
 def _decode_name(raw: bytes) -> str:
-    """/J#61vaScript -> JavaScript"""
+ 
     fixed = HEX_RE.sub(lambda m: bytes([int(m.group(1), 16)]), raw)
     return fixed.decode("latin-1")
 
 
 def _object_streams(data: bytes):
-    """Розпаковує лише об'єктні потоки (/ObjStm): там ховаються словники."""
+#Розпаковує лише об'єктні потоки (/ObjStm) і  ховаються словники
     count = 0
     for m in STREAM_RE.finditer(data):
         if b"/ObjStm" not in data[max(0, m.start() - 300):m.start()]:
@@ -44,11 +43,13 @@ def _object_streams(data: bytes):
 
 
 
+# PDF не відкривається бібліотекою-рендерером, тому експлойт не спрацює під час аналізу.
+# Шукаємо ключові імена (/JavaScript, /Launch, /OpenAction) і приховане кодування #xx.
 def check_pdf(info: FileInfo) -> list[Finding]:
     with info.path.open("rb") as f:
         data = f.read(MAX_READ)
 
-    # звичайні потоки прибираємо: у стиснутих даних випадкові «імена»
+    # звичайні потоки прибираємо
     texts = [STREAM_RE.sub(b"", data)] + list(_object_streams(data))
 
     names: Counter = Counter()
@@ -107,7 +108,7 @@ def check_pdf(info: FileInfo) -> list[Finding]:
     if bad_links:
         findings.append(Finding(
             "PDF_SUSPICIOUS_LINK", 30,
-            "Підозрілі посилання: " + "; ".join(bad_links[:3])))
+            "Підозрілі посилання: " + ", ".join(bad_links[:3])))
     if obfuscated:
         findings.append(Finding(
             "PDF_OBFUSCATED", 50,
