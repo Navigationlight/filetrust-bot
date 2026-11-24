@@ -1,5 +1,5 @@
-
-import hashlib
+"""Показує, на якому кроці йде час. Використання: python eval/where_slow.py"""
+import shutil
 import sys
 import tempfile
 import time
@@ -9,8 +9,6 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "src"))
 
 import magic                                              # noqa: E402
-from html.parser import HTMLParser                        # noqa: E402
-from filetrust.analyzers import html_page                 # noqa: E402
 from filetrust.pipeline import analyze                    # noqa: E402
 
 CASES = {
@@ -22,17 +20,18 @@ CASES = {
 def timed(label, fn):
     t = time.perf_counter()
     fn()
-    print(f"    {label:<22}{time.perf_counter() - t:7.2f} с", flush=True)
+    print(f"    {label:<28}{time.perf_counter() - t:7.2f} с", flush=True)
 
 
 for name, data in CASES.items():
     print(name, f"({len(data) // 1024} КБ)", flush=True)
-    p = Path(tempfile.mkdtemp()) / "s.bin"
+    d = Path(tempfile.mkdtemp())
+    p, p2 = d / "s.bin", d / "copy.bin"
     p.write_bytes(data)
-    text = data.decode("utf-8", "ignore")
-    timed("sha256", lambda: hashlib.sha256(data).hexdigest())
-    timed("libmagic", lambda: magic.from_file(str(p), mime=True))
-    timed("sanitize", lambda: html_page._sanitize(text))
-    clean = html_page._sanitize(text)
-    timed("HTMLParser (після)", lambda: (lambda h: (h.feed(clean), h.close()))(HTMLParser()))
+    timed("перше читання файлу", lambda: p.read_bytes())
+    timed("libmagic, 1-й виклик", lambda: magic.from_file(str(p), mime=True))
+    timed("libmagic, 2-й виклик", lambda: magic.from_file(str(p), mime=True))
+    shutil.copy(p, p2)
+    timed("libmagic, нова копія", lambda: magic.from_file(str(p2), mime=True))
+    timed("libmagic, з пам'яті", lambda: magic.from_buffer(data[:1048576], mime=True))
     timed("повний analyze", lambda: analyze(p, "a.html"))
