@@ -26,7 +26,7 @@ COMPATIBLE = {
 REAL_EXEC_KINDS = {"exe", "elf", "lnk"}
 
 def check_name(name: str) -> list[Finding]:
-    """Перевірки тільки за назвою (не потребують файлу)."""
+#Перевірки тільки за назвою (не потребують файлу)
     findings = []
     suffixes = [s.lower().strip() for s in PurePath(name).suffixes]
     if "\u202e" in name:
@@ -42,7 +42,7 @@ def check_name(name: str) -> list[Finding]:
     return findings
 
 def check_type(info: FileInfo) -> list[Finding]:
-    """Розширення ↔ реальний тип за вмістом."""
+#Розширення і реальний тип за вмістом.
     ext = PurePath(info.name).suffix.lower().strip()
     expected = EXPECTED_KIND.get(ext)
     if expected is None or info.kind == "unknown":
@@ -58,7 +58,7 @@ def check_type(info: FileInfo) -> list[Finding]:
         f"Розширення {ext}, але вміст виглядає як «{info.kind}»")]
 
 def check_exec(info: FileInfo) -> list[Finding]:
-    
+#Файл є виконуваним за розширенням або за вмістом.
     ext = PurePath(info.name).suffix.lower().strip()
     if ext not in EXEC_EXTS and info.kind not in REAL_EXEC_KINDS:
         return []
@@ -70,7 +70,7 @@ def check_exec(info: FileInfo) -> list[Finding]:
 
 def check(info: FileInfo) -> list[Finding]:
     findings = check_name(info.name) + check_type(info)
-    
+    # DISGUISED_EXEC вже каже, що це exe: дубль EXEC_FILE не додаємо
     if not any(f.id == "DISGUISED_EXEC" for f in findings):
         findings += check_exec(info)
     return findings
