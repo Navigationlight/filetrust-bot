@@ -1,3 +1,4 @@
+
 import random
 import sys
 import tempfile
@@ -10,12 +11,12 @@ sys.path.insert(0, str(HERE.parent / "src"))
 sys.path.insert(0, str(HERE))
 sys.stdout.reconfigure(encoding="utf-8")
 
-from filetrust.pipeline import analyze       
-from filetrust.scoring.engine import score    
-import samples                               
+from filetrust.pipeline import analyze        
+from filetrust.scoring.explain import assess 
+import samples                                
 
-THRESHOLD = 30     
-MIN_RECALL = 0.90   
+THRESHOLD = 30      
+MIN_RECALL = 0.90  
 MAX_FPR = 0.10
 
 NAIVE_EXEC_EXT = {".exe", ".scr", ".bat", ".cmd", ".js", ".vbs", ".hta",
@@ -31,10 +32,11 @@ def run_all(items, tmp: Path):
         t0 = time.perf_counter()
         info, findings = analyze(p, s.name)
         ms = (time.perf_counter() - t0) * 1000
-        total, verdict = score(findings)
+        a = assess(findings)
+        total = a.total
         res.append({
             "s": s, "kind": info.kind, "total": total, "ms": ms,
-            "ids": [f.id for f in findings],
+            "ids": [f.id for f in a.findings],
             "tool": total >= THRESHOLD,
             "ext": PurePath(s.name).suffix.lower() in NAIVE_EXEC_EXT,
             "magic": info.kind in REAL_EXEC_KINDS,
@@ -107,7 +109,7 @@ def main():
             out.append(f"| {label} | {sname} | {pct(rec)} | {pct(fpr)} | {pct(prec)} | {pct(acc)} |")
 
     out += ["", "Повнота: частка шкідливих, які позначено. Хибні спрацювання: частка чистих, "
-            "які позначено помилково.", "", "## Повнота за категоріями усі зразки", "",
+            "які позначено помилково.", "", "## Повнота за категоріями (усі зразки)", "",
             "| Категорія | Кількість | filetrust | Лише розширення | Лише libmagic |",
             "|---|---|---|---|---|"]
     bycat = defaultdict(list)
@@ -142,7 +144,7 @@ def main():
     for c in bad_cases[:10]:
         out.append(f"  - виняток: {c}")
     out += ["", "## Обмеження", "",
-            "- Набір синтетичний.",
+            "- Набір синтетичний ",
             "- Зразки інертні (без робочого шкідливого коду), тому вимірюється розпізнавання ознак, "
             "а не антивірусна здатність.",
             "- Розподіл dev / held-out зафіксовано правилом заздалегідь, ваги правил підбираються лише за dev, "
