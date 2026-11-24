@@ -1,4 +1,3 @@
-
 import random
 import sys
 import tempfile
@@ -131,7 +130,7 @@ def main():
         for r in misses:
             out.append(f"| {r['s'].name.replace(chr(0x202e), '<RTLO>')} | "
                        f"{'шкідливий' if r['s'].bad else 'чистий'} | {r['total']} | "
-                       f"{', '.join(r['ids']) or '—'} |")
+                       f"{', '.join(r['ids']) or 'немає'} |")
     else:
         out.append("Помилок на цьому наборі немає .")
 
