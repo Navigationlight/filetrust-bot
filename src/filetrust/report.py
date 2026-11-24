@@ -12,7 +12,7 @@ ADVICE = {
 
 
 def defang(text: str) -> str:
-
+    """hxxp і [.] у посиланнях: щоб у чаті на них випадково не натиснули."""
     def fix(m):
         return m.group(0).replace("http", "hxxp", 1).replace(".", "[.]")
     return URL_RE.sub(fix, text)
