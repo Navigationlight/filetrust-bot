@@ -3,9 +3,15 @@ from filetrust.models import FileInfo, Finding
 
 URL_RE = re.compile(r"https?://[^\s)»]+")
 
+ADVICE = {
+    "ВИСОКИЙ": "Що робити: не відкривайте файл, видаліть його, запитайте відправника іншим каналом.",
+    "ПІДОЗРІЛО": "Що робити: відкривайте лише якщо впевнені у відправнику, бажано у пісочниці.",
+    "НИЗЬКИЙ": "Що робити: явних ознак загрози немає, але обережність не зайва.",
+}
+
 
 def defang(text: str) -> str:
-    
+
     def fix(m):
         return m.group(0).replace("http", "hxxp", 1).replace(".", "[.]")
     return URL_RE.sub(fix, text)
@@ -28,13 +34,8 @@ def format_report(info: FileInfo, total: int, verdict: str,
     else:
         lines.append("Підозрілих ознак не знайдено.")
         lines.append("Це не гарантія безпеки, а лише результат наших перевірок.")
-     advice = {
-        "ВИСОКИЙ": "Що робити: не відкривайте файл, видаліть його, запитайте відправника іншим каналом.",
-        "ПІДОЗРІЛО": "Що робити: відкривайте лише якщо впевнені у відправнику, бажано у пісочниці.",
-        "НИЗЬКИЙ": "Що робити: явних ознак загрози немає, але обережність не зайва.",
-    }
-    for key, text in advice.items():
+    for key, text in ADVICE.items():
         if key in verdict:
             lines += ["", text]
-            break    
+            break
     return "\n".join(lines)
