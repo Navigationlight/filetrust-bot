@@ -1,4 +1,3 @@
-
 from dataclasses import dataclass, field
 
 from filetrust.models import Finding
@@ -53,6 +52,7 @@ def category_of(fid: str) -> str:
     return OTHER
 
 
+# Комбінації додають бали зверху: два слабкі сигнали разом небезпечніші за суму окремих.
 def _chains(findings: list[Finding]) -> list[Finding]:
     ids = {f.id for f in findings}
     cats = {category_of(i) for i in ids}
@@ -89,5 +89,5 @@ def assess(findings: list[Finding]) -> Assessment:
         c = category_of(f.id)
         cats[c] = cats.get(c, 0) + f.points
     parts = [_STORY[c] for c in (MASK, CODE, PHISH, CONT) if c in cats]
-    story = ("Висновок: " + "; ".join(parts) + ".") if parts else ""
+    story = ("Висновок: " + ", ".join(parts) + ".") if parts else ""
     return Assessment(total, verdict, all_f, cats, story)
