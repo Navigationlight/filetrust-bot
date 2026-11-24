@@ -1,3 +1,4 @@
+import re
 from pathlib import PurePath
 from filetrust.models import FileInfo, Finding
 
@@ -25,11 +26,23 @@ COMPATIBLE = {
 }
 REAL_EXEC_KINDS = {"exe", "elf", "lnk"}
 
+# невидимі символи і керування напрямком тексту: ними ховають справжнє розширення
+_INVISIBLE_RE = re.compile("[\u200b-\u200f\u2060\ufeff\u00ad]")
+_BIDI_CONTROLS = "\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069"
+
+
+def normalize_name(name: str) -> str:
+    """Назва, якою її побачить Windows: без невидимих символів, пробілів і крапок у кінці.
+
+    Windows відкидає кінцеві крапки та пробіли, тому invoice.pdf.exe. запускається як exe.
+    """
+    return _INVISIBLE_RE.sub("", name).rstrip(" .")
+
 def check_name(name: str) -> list[Finding]:
-#Перевірки тільки за назвою (не потребують файлу)
+    """Перевірки тільки за назвою (не потребують файлу)."""
     findings = []
-    suffixes = [s.lower().strip() for s in PurePath(name).suffixes]
-    if "\u202e" in name:
+    suffixes = [s.lower().strip() for s in PurePath(normalize_name(name)).suffixes]
+    if any(c in name for c in _BIDI_CONTROLS):
         findings.append(Finding(
             "RTLO", 60,
             "У назві прихований символ, що перевертає розширення (прийом RTLO)"))
@@ -42,8 +55,8 @@ def check_name(name: str) -> list[Finding]:
     return findings
 
 def check_type(info: FileInfo) -> list[Finding]:
-#Розширення і реальний тип за вмістом.
-    ext = PurePath(info.name).suffix.lower().strip()
+    """Розширення ↔ реальний тип за вмістом."""
+    ext = PurePath(normalize_name(info.name)).suffix.lower().strip()
     expected = EXPECTED_KIND.get(ext)
     if expected is None or info.kind == "unknown":
         return []
@@ -58,8 +71,8 @@ def check_type(info: FileInfo) -> list[Finding]:
         f"Розширення {ext}, але вміст виглядає як «{info.kind}»")]
 
 def check_exec(info: FileInfo) -> list[Finding]:
-#Файл є виконуваним за розширенням або за вмістом.
-    ext = PurePath(info.name).suffix.lower().strip()
+    """Файл є виконуваним за розширенням або за вмістом."""
+    ext = PurePath(normalize_name(info.name)).suffix.lower().strip()
     if ext not in EXEC_EXTS and info.kind not in REAL_EXEC_KINDS:
         return []
     return [Finding(
