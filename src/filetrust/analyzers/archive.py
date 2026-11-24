@@ -29,7 +29,7 @@ def _is_unsafe_path(name: str) -> bool:
             or (len(n) > 1 and n[1] == ":"))
 
 
-# Архів ніколи не розпаковується на диск: читаємо лише список записів.
+# Архів ніколи не розпаковується на диск.
 # Тому path traversal і бомба виявляються без ризику для системи.
 def analyze_entries(entries: list[Entry], archive_size: int) -> list[Finding]:
     """Спільна логіка для zip та 7z: список записів -> знахідки."""
@@ -80,7 +80,7 @@ def analyze_entries(entries: list[Entry], archive_size: int) -> list[Finding]:
 def check_zip(info: FileInfo) -> list[Finding]:
     try:
         zf = zipfile.ZipFile(info.path)
-    except zipfile.BadZipFile:
+    except (zipfile.BadZipFile, NotImplementedError, ValueError, OSError, EOFError, RuntimeError):
         return [Finding("ARCHIVE_UNREADABLE", 20,
                         "Архів пошкоджений або має нестандартну структуру")]
     with zf:
