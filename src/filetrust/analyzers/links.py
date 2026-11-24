@@ -6,7 +6,7 @@ SHORTENERS = {"bit.ly", "tinyurl.com", "t.co", "goo.gl", "is.gd", "cutt.ly",
 
 
 def bad_link_reason(url: str) -> str | None:
-  
+    """Повертає причину, чому посилання підозріле, або None."""
     try:
         host = urlparse(url.strip()).hostname
     except ValueError:
