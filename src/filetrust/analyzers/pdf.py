@@ -12,7 +12,6 @@ MAX_DECOMP = 5 * 1024 * 1024   # і не більше 5 МБ з одного п�
 
 NAME_RE = re.compile(rb"/([A-Za-z0-9#_.\-]{1,40})")
 HEX_RE = re.compile(rb"#([0-9A-Fa-f]{2})")
-STREAM_RE = re.compile(rb"(?<!end)stream\r?\n(.*?)\r?\nendstream", re.S)
 URI_RE = re.compile(rb"/URI\s*\(([^)]{1,300})\)")
 FILE_RE = re.compile(rb"/(?:UF|F)\s*\(([^)]{1,120})\)")
 
@@ -21,22 +20,61 @@ WATCHED = {"JavaScript", "JS", "OpenAction", "AA", "Launch",
            "EmbeddedFile", "RichMedia", "URI"}
 
 def _decode_name(raw: bytes) -> str:
- 
+    """/J#61vaScript -> JavaScript"""
     fixed = HEX_RE.sub(lambda m: bytes([int(m.group(1), 16)]), raw)
     return fixed.decode("latin-1")
 
 
-def _object_streams(data: bytes):
-#Розпаковує лише об'єктні потоки (/ObjStm) і  ховаються словники
+def _split_streams(data: bytes):
+    """Ділить PDF на текст поза потоками і список потоків (початок, вміст).
+
+    Це лінійний пошук через find. Регулярка stream(.*?)endstream працювала
+    квадратично: PDF на 156 КБ аналізувався понад хвилину.
+    """
+    outside: list[bytes] = []
+    streams: list[tuple[int, bytes]] = []
+    last = 0
+    pos = 0
+    while True:
+        s = data.find(b"stream", pos)
+        if s == -1:
+            break
+        pos = s + 6
+        if data[max(0, s - 3):s] == b"end":
+            continue
+        body_start = s + 6
+        if data[body_start:body_start + 2] == b"\r\n":
+            body_start += 2
+        elif data[body_start:body_start + 1] == b"\n":
+            body_start += 1
+        else:
+            continue
+        e = data.find(b"endstream", body_start)
+        if e == -1:
+            break
+        body = data[body_start:e]
+        if body.endswith(b"\r\n"):
+            body = body[:-2]
+        elif body.endswith(b"\n"):
+            body = body[:-1]
+        outside.append(data[last:s])
+        streams.append((s, body))
+        last = pos = e + 9
+    outside.append(data[last:])
+    return b"".join(outside), streams
+
+
+def _object_streams(data: bytes, streams):
+    """Розпаковує лише об'єктні потоки (/ObjStm): там ховаються словники."""
     count = 0
-    for m in STREAM_RE.finditer(data):
-        if b"/ObjStm" not in data[max(0, m.start() - 300):m.start()]:
+    for start, body in streams:
+        if b"/ObjStm" not in data[max(0, start - 300):start]:
             continue
         count += 1
         if count > MAX_STREAMS:
             break
         try:
-            yield zlib.decompressobj().decompress(m.group(1), MAX_DECOMP)
+            yield zlib.decompressobj().decompress(body, MAX_DECOMP)
         except zlib.error:
             continue
 
@@ -50,7 +88,8 @@ def check_pdf(info: FileInfo) -> list[Finding]:
         data = f.read(MAX_READ)
 
     # звичайні потоки прибираємо
-    texts = [STREAM_RE.sub(b"", data)] + list(_object_streams(data))
+    outside, streams = _split_streams(data)
+    texts = [outside] + list(_object_streams(data, streams))
 
     names: Counter = Counter()
     obfuscated: set[str] = set()
