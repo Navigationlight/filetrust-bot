@@ -40,6 +40,7 @@ async def on_file(message: Message, bot: Bot):
         await message.answer(f"Файл завеликий (максимум {MAX_FILE_MB} МБ).")
         return
 
+    # Файл зберігається під фіксованою назвою у тимчасовій папці, яка видаляється після аналізу
     async with _slots:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "sample.bin"   # фіксоване імʼя, не від користувача
