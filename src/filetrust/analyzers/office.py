@@ -16,10 +16,38 @@ REMOTE_TYPES = ("attachedtemplate", "oleobject", "frame",
 STRONG = ("shell", "powershell", "urldownloadtofile", "createobject",
           "xmlhttp", "adodb.stream", "wscript", "cmd")
 
-REL_RE = re.compile(rb"<Relationship\b([^>]*)>", re.I)
 ATTR_RE = re.compile(rb"""(\w+)\s*=\s*["']([^"']*)["']""")
-DDE_WORD_RE = re.compile(rb"<w:instrText[^>]*>[^<]*\bDDE(?:AUTO)?\b", re.I)
-DDE_XL_RE = re.compile(rb"<f(?:\s[^>]*)?>[^<]*\b(?:cmd|powershell)\s*\|", re.I)
+DDE_WORD_TEXT = re.compile(rb"\bDDE(?:AUTO)?\b", re.I)
+DDE_XL_TEXT = re.compile(rb"\b(?:cmd|powershell)\s*\|", re.I)
+MAX_TAG_ATTRS = 4096
+
+
+def _relationships(data: bytes):
+  
+    for frag in data.split(b"<"):
+        if frag[:12].lower() != b"relationship":
+            continue
+        nxt = frag[12:13]
+        if nxt.isalnum() or nxt == b"_":
+            continue
+        head, sep, _ = frag.partition(b">")
+        if sep:
+            yield head[12:12 + MAX_TAG_ATTRS]
+
+
+def _has_dde(data: bytes, word: bool) -> bool:
+    for frag in data.split(b"<"):
+        if word:
+            if frag[:11].lower() != b"w:instrtext":
+                continue
+        else:
+            c = frag[1:2]
+            if frag[:1].lower() != b"f" or not (c == b">" or c.isspace()):
+                continue
+        _, sep, text = frag.partition(b">")
+        if sep and (DDE_WORD_TEXT if word else DDE_XL_TEXT).search(text):
+            return True
+    return False
 
 
 def _read(zf: zipfile.ZipFile, name: str) -> bytes:
@@ -57,7 +85,7 @@ def _olevba_scan(path) -> tuple[bool, list]:
 
 
 def macro_findings(results: list) -> list[Finding]:
-    """results: список (тип, ключове слово, опис) від olevba."""
+    """results список (тип, ключове слово, опис) від olevba."""
     findings = [Finding("OFFICE_MACRO", 40, "У документі є макроси (VBA)")]
     auto = sorted({k for t, k, _ in results if t == "AutoExec"})
     susp = sorted({k for t, k, _ in results if t == "Suspicious"})
@@ -78,11 +106,11 @@ def macro_findings(results: list) -> list[Finding]:
 
 
 def check_ooxml(info: FileInfo) -> list[Finding]:
-    """docx / xlsx / pptx / docm ...: це zip з xml усередині."""
+    """docx / xlsx / pptx / docm ... це zip з xml усередині."""
     try:
         zf = zipfile.ZipFile(info.path)
-    except zipfile.BadZipFile:
-        return []
+    except (zipfile.BadZipFile, NotImplementedError, ValueError, OSError, EOFError, RuntimeError):
+        return []   # пошкоджений архів уже позначає archive.check_zip
 
     remote: list[str] = []
     bad_links: list[str] = []
@@ -99,7 +127,7 @@ def check_ooxml(info: FileInfo) -> list[Finding]:
         for n in names:
             if not n.endswith(".rels"):
                 continue
-            for raw in REL_RE.findall(_read(zf, n)):
+            for raw in _relationships(_read(zf, n)):
                 a = {k.decode("latin-1").lower(): v.decode("utf-8", "ignore")
                      for k, v in ATTR_RE.findall(raw)}
                 if a.get("targetmode", "").lower() != "external":
@@ -124,8 +152,7 @@ def check_ooxml(info: FileInfo) -> list[Finding]:
             if parts > MAX_XML_PARTS:
                 break
             data = _read(zf, n)
-            if (word and DDE_WORD_RE.search(data)) or \
-               (sheet and DDE_XL_RE.search(data)):
+            if _has_dde(data, word):
                 dde = True
                 break
 
