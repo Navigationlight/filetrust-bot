@@ -29,6 +29,8 @@ def _is_unsafe_path(name: str) -> bool:
             or (len(n) > 1 and n[1] == ":"))
 
 
+# Архів ніколи не розпаковується на диск: читаємо лише список записів.
+# Тому path traversal і бомба виявляються без ризику для системи.
 def analyze_entries(entries: list[Entry], archive_size: int) -> list[Finding]:
     """Спільна логіка для zip та 7z: список записів -> знахідки."""
     exec_names: list[str] = []
