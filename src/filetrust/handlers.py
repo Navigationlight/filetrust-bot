@@ -7,22 +7,22 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message
 from filetrust.config import MAX_FILE_MB
 from filetrust.pipeline import analyze
-from filetrust.scoring.engine import score
+from filetrust.scoring.explain import assess
 from filetrust.report import format_report
 
 router = Router()
 
-COOLDOWN_SEC = 5         
-TIMEOUT_SEC = 60          
+COOLDOWN_SEC = 5          # пауза між файлами одного користувача
+TIMEOUT_SEC = 60          # максимум на аналіз одного файлу
 _last_request: dict[int, float] = {}
-_slots = asyncio.Semaphore(2)   
+_slots = asyncio.Semaphore(2)   # не більше 2 аналізів одночасно 
 
 
 @router.message(CommandStart())
 async def start(message: Message):
     await message.answer(
-        "Надішліть мені файл, і я перевірю, чи він є тим за кого себе видає. "
-        "Файл не запускається,а  лише аналізується.")
+        "Надішліть мені файл, і я перевірю, чи він є тим, за кого себе видає. "
+        "Файл не запускається, лише аналізується.")
 
 
 @router.message(F.document)
@@ -54,5 +54,5 @@ async def on_file(message: Message, bot: Bot):
             except Exception:
                 await message.answer("Не вдалося проаналізувати файл.")
                 return
-    total, verdict = score(findings)
-    await message.answer(format_report(info, total, verdict, findings))
+    a = assess(findings)
+    await message.answer(format_report(info, a.total, a.verdict, a.findings, a.story))
