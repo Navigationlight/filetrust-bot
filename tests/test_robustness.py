@@ -1,4 +1,4 @@
-"""Стійкість: обхід розпізнавання, повільні файли, випадкові дані."""
+
 import io
 import random
 import time
@@ -187,3 +187,17 @@ def test_hypothesis_random_bytes(tmp_path):
         assert 0 <= a.total <= 100 and dt < SLOW_LIMIT
 
     check()
+
+
+def test_html_sanitize_is_linear_and_safe():
+  
+    from filetrust.analyzers.html_page import _sanitize
+    bad = "<a href=" * 1000 + "<!--" * 1000 + "<" * 1000 + "<b>ok</b>" + "a<b"
+    out = _sanitize(bad)
+    for frag in out.split("<")[1:]:
+        assert frag[:1].isalpha() or (frag[:1] == "/" and frag[1:2].isalpha())
+        assert ">" in frag
+    assert "<b>" in out and "</b>" in out
+    t = time.perf_counter()
+    _sanitize("<a href=" * 1_000_000)
+    assert time.perf_counter() - t < 3
