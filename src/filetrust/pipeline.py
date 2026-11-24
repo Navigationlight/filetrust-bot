@@ -7,7 +7,7 @@ from filetrust.models import FileInfo, Finding
 
 Analyzer = Callable[[FileInfo], list[Finding]]
 
-# вид файлу -> список перевірок. Нові кроки просто додають рядки сюди.
+# Вид файлу і список перевірок. Нові кроки просто додають рядки 
 ANALYZERS: dict[str, list[Analyzer]] = {
     "zip": [archive.check_zip, office.check_ooxml],
     "ooxml": [archive.check_zip, office.check_ooxml],
@@ -18,6 +18,8 @@ ANALYZERS: dict[str, list[Analyzer]] = {
 }
 
 
+# Файл ніколи не запускається, лише читається байтами.
+# Вид визначаємо за вмістом (libmagic), а не за розширенням
 def analyze(path: Path, name: str) -> tuple[FileInfo, list[Finding]]:
     info = inspect_file(path, name)
     findings = common.check(info)
