@@ -52,7 +52,7 @@ def category_of(fid: str) -> str:
     return OTHER
 
 
-# Комбінації додають бали зверху: два слабкі сигнали разом небезпечніші за суму окремих.
+# Комбінації додають бали зверху,два слабкі сигнали разом небезпечніші за суму окремих.
 def _chains(findings: list[Finding]) -> list[Finding]:
     ids = {f.id for f in findings}
     cats = {category_of(i) for i in ids}
