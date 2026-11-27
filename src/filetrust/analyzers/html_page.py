@@ -19,7 +19,6 @@ def _is_external(url: str) -> bool:
 
 
 def _sanitize(text: str) -> str:
-   
     parts = text.split("<")
     out = [parts[0]]
     for frag in parts[1:]:
