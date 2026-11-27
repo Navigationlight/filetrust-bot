@@ -30,6 +30,7 @@ MIME_RULES = [
     ("application/x-ole-storage", "ole"),
     ("application/cdfv2", "ole"),
     ("application/zip", "zip"),
+    ("application/x-zip-compressed", "zip"),
     ("application/vnd.rar", "rar"),
     ("application/x-rar", "rar"),
     ("application/x-7z-compressed", "7z"),
@@ -65,7 +66,12 @@ def inspect_file(path: Path, name: str) -> FileInfo:
         mime = "text/html"
     else:
         mime = magic.from_buffer(head, mime=True)
+    kind = kind_from_mime(mime)
+    if kind == "unknown" and head.startswith((b"PK\x03\x04", b"PK\x05\x06")):
+        kind = "zip"
+        if mime == "application/octet-stream":
+            mime = "application/zip"
     return FileInfo(
         name=name, path=path, size=path.stat().st_size,
-        sha256=sha256_of(path), mime=mime, kind=kind_from_mime(mime),
+        sha256=sha256_of(path), mime=mime, kind=kind,
     )
