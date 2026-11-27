@@ -22,12 +22,6 @@ def _is_external(url: str) -> bool:
 
 
 def _sanitize(text: str) -> str:
-    # Защита от HTML-бомб с сотнями тысяч незакрытых '<' (O(N^2) внутри CPython HTMLParser)
-    if text.count("<") - text.count(">") > MAX_UNCLOSED_TAGS:
-        text = text[:65536]
-        if text.count("<") - text.count(">") > MAX_UNCLOSED_TAGS:
-            return ""
-
     parts = text.split("<")
     out = [parts[0]]
     for frag in parts[1:]:
