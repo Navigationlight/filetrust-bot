@@ -81,6 +81,10 @@ def check_html(info: FileInfo) -> list[Finding]:
     with info.path.open("rb") as f:
         text = f.read(MAX_READ).decode("utf-8", errors="ignore")
 
+    # Защита от HTML-бомб с сотнями тысяч незакрытых '<' (O(N^2) в CPython HTMLParser)
+    if text.count("<") - text.count(">") > 2000:
+        text = text[:65536]
+
     scan = _Scan()
     try:
         scan.feed(_sanitize(text))
