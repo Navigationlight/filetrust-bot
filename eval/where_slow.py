@@ -1,4 +1,4 @@
-"""Показує, на якому кроці йде час. Використання: python eval/where_slow.py"""
+
 import shutil
 import sys
 import tempfile
@@ -8,8 +8,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "src"))
 
-import magic                                              # noqa: E402
-from filetrust.pipeline import analyze                    # noqa: E402
+import magic                                              
+from filetrust.pipeline import analyze                   
 
 CASES = {
     "form": b"<html>" + b"<form " * 200_000,

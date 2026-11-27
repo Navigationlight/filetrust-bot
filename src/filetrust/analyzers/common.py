@@ -39,7 +39,7 @@ def normalize_name(name: str) -> str:
     return _INVISIBLE_RE.sub("", name).rstrip(" .")
 
 def check_name(name: str) -> list[Finding]:
-    """Перевірки тільки за назвою (не потребують файлу)."""
+    """Перевірки тільки за назвою ."""
     findings = []
     suffixes = [s.lower().strip() for s in PurePath(normalize_name(name)).suffixes]
     if any(c in name for c in _BIDI_CONTROLS):
@@ -54,13 +54,24 @@ def check_name(name: str) -> list[Finding]:
             f"а насправді {suffixes[-1]}"))
     return findings
 
+def _pdf_header_near_start(info: FileInfo) -> bool:
+    try:
+        with info.path.open("rb") as f:
+            return b"%PDF-" in f.read(1024)
+    except OSError:
+        return False
+
+
 def check_type(info: FileInfo) -> list[Finding]:
-    """Розширення ↔ реальний тип за вмістом."""
+    """Розширення і реальний тип за вмістом."""
     ext = PurePath(normalize_name(info.name)).suffix.lower().strip()
     expected = EXPECTED_KIND.get(ext)
     if expected is None or info.kind == "unknown":
         return []
     if info.kind in COMPATIBLE.get(expected, {expected}):
+        return []
+    # Вьюери відкривають PDF, якщо %PDF- є в перших 1024 байтах (не обов'язково на початку)
+    if expected == "pdf" and _pdf_header_near_start(info):
         return []
     if info.kind in REAL_EXEC_KINDS:
         return [Finding(

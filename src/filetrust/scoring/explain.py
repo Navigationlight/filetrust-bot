@@ -76,7 +76,7 @@ def _chains(findings: list[Finding]) -> list[Finding]:
     if PHISH in cats and CODE in cats:
         out.append(Finding(
             "CHAIN_PHISH_CODE", 10,
-            "Підозрілі адреси разом із кодом: схоже на доставку шкідливого вмісту"))
+            "Підозрілі адреси разом із кодом "))
     return out
 
 

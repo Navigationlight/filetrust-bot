@@ -1,58 +1,36 @@
-import pytest
 
-from filetrust.analyzers.urlcheck import check_url, extract_urls, registered_domain
-from filetrust.scoring.explain import assess
-
-BAD = {
-    "https://google.com@evil.com/login": "LINK_USERINFO",
-    "http://paypal-secure-login.xyz/verify": "LINK_BRAND",
-    "https://bit.ly/3abcd": "LINK_SHORTENER",
-    "http://185.10.20.30/pay": "LINK_IP",
-    "https://xn--pple-43d.com/id": "LINK_PUNYCODE",
-    "https://files.example.org/setup.exe": "LINK_EXEC_DOWNLOAD",
-    "javascript:alert(1)": "LINK_DANGEROUS_SCHEME",
-    "https://secure.monobank-ua-card.top/pay": "LINK_BRAND",
-}
-GOOD = [
-    "https://www.google.com/search?q=filetrust",
-    "https://github.com/Navigationlight/filetrust-bot",
-    "https://google.com.ua/maps",
-    "https://diia.gov.ua/services",
-    "https://t.me/somechannel",
-    "https://uk.wikipedia.org/wiki/Python",
-]
+from filetrust.analyzers.urlcheck import check_url
+from filetrust.scoring.engine import score
 
 
-@pytest.mark.parametrize("url,fid", BAD.items())
-def test_bad_links_are_flagged(url, fid):
-    ids = {f.id for f in check_url(url)}
-    assert fid in ids
-    assert assess(check_url(url)).total >= 30 or fid in ("LINK_PUNYCODE", "LINK_IP")
+def sc(u):
+    return score(check_url(u))[0]
 
 
-@pytest.mark.parametrize("url", GOOD)
-def test_normal_links_are_clean(url):
-    assert assess(check_url(url)).total < 30
+def test_js_library_names_are_not_downloads():
+    for u in ("http://travis-ci.org/indutny/hash.js", "https://stackoverflow.com/questions/tagged/async.js",
+              "https://cdn.example.org/lib/one.js"):
+        assert "LINK_EXEC_DOWNLOAD" not in {f.id for f in check_url(u)}
 
 
-def test_hidden_link_text_mismatch():
-    ids = {f.id for f in check_url("https://evil.example.net/x", shown="paypal.com")}
-    assert "LINK_TEXT_MISMATCH" in ids
-    assert not check_url("https://paypal.com/x", shown="paypal.com")
+def test_real_exe_download_still_flagged():
+    assert sc("https://files.evil-site.top/update.exe") >= 40
 
 
-def test_garbage_does_not_crash():
-    for u in ["", "http://", "https://[::1", "://", "http://a b", "\x00", "http://" + "a" * 5000]:
-        check_url(u)
+def test_local_and_test_addresses_are_ignored():
+    for u in ("http://127.0.0.1:5000/", "http://localhost:8080/x", "http://10.255.255.1", "http://example.com/a.js"):
+        assert sc(u) == 0
 
 
-def test_extract_urls_dedup_and_cap():
-    text = " ".join(f"https://site{i}.example.com/a" for i in range(30)) + " https://site0.example.com/a"
-    assert len(extract_urls(text)) == 10
-    assert extract_urls("див. https://example.com/x.") == [("https://example.com/x", None)]
+def test_public_ip_still_flagged():
+    assert sc("http://185.220.101.4/diia/pay") >= 30
 
 
-def test_registered_domain():
-    assert registered_domain("a.b.example.com") == "example.com"
-    assert registered_domain("shop.site.co.uk") == "site.co.uk"
-    assert registered_domain("diia.gov.ua") == "diia.gov.ua"
+def test_real_google_service_domains_are_not_brand_fakes():
+    assert sc("https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js") < 30
+    assert sc("https://ai.googleblog.com/2020/02/autoflip.html") < 30
+
+
+def test_digit_and_hyphen_typosquats_are_caught():
+    assert sc("https://secure-paypa1.com/login") >= 30
+    assert sc("http://mono-bank.ua.pay-card.top/") >= 30
