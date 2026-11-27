@@ -1,4 +1,3 @@
-
 import ipaddress
 import re
 from urllib.parse import urlsplit
@@ -15,7 +14,12 @@ DOMAIN_TEXT_RE = re.compile(r"^(?:https?://)?((?:[\w\-]+\.)+[a-z]{2,})(?:[/:?#]|
 DANGEROUS_SCHEMES = ("javascript:", "data:", "vbscript:", "file:")
 RISKY_TLDS = {"zip", "mov", "top", "xyz", "click", "tk", "ml", "ga", "cf", "gq",
               "icu", "cyou", "rest", "cfd", "sbs", "quest"}
-DOWNLOAD_EXTS = EXEC_EXTS | {".apk", ".iso", ".img", ".dmg"}
+
+DOWNLOAD_EXTS = (EXEC_EXTS - {".js", ".com"}) | {".apk", ".iso", ".img", ".dmg"}
+# службові адреси: з інтернету на них фішинг не веде
+LOCAL_HOSTS = {"localhost", "example.com", "example.org", "example.net"}
+LOCAL_TLDS = {"localhost", "test", "invalid", "example", "local"}
+LEET = str.maketrans({"1": "l", "0": "o", "3": "e", "5": "s", "4": "a"})
 SECOND_LEVEL = {"co", "com", "org", "net", "gov", "edu", "ac"}
 
 # бренди, під які найчастіше підробляють сайти
@@ -32,6 +36,8 @@ REAL_DOMAINS = {
     "whatsapp.com", "netflix.com", "paypal.com", "binance.com", "olx.ua",
     "privatbank.ua", "privat24.ua", "monobank.ua", "novaposhta.ua", "ukrposhta.ua",
     "diia.gov.ua",
+    "googleapis.com", "googleblog.com", "googlesource.com", "googletagmanager.com",
+    "google-analytics.com", "gstatic.cn", "youtube-nocookie.com",
 }
 
 
@@ -79,6 +85,16 @@ def check_url(url: str, shown: str | None = None) -> list[Finding]:
     if not host:
         return []
 
+    # локальні й тестові адреси не є фішингом
+    if host in LOCAL_HOSTS or host.rsplit(".", 1)[-1] in LOCAL_TLDS:
+        return []
+    try:
+        ip = ipaddress.ip_address(host)
+        if ip.is_loopback or ip.is_private or ip.is_unspecified:
+            return []
+    except ValueError:
+        pass
+
     out: list[Finding] = []
     reg = registered_domain(host)
     tld = host.rsplit(".", 1)[-1]
@@ -102,8 +118,10 @@ def check_url(url: str, shown: str | None = None) -> list[Finding]:
         if tld in RISKY_TLDS:
             out.append(Finding("LINK_RISKY_TLD", 15,
                                f"Зона .{tld} часто використовується у шахрайських сайтах"))
+        norm = host.translate(LEET).replace("-", "")   # paypa1, mono-bank
         for brand in BRANDS:
-            if brand in host and reg not in REAL_DOMAINS:
+            hit = brand in host or (len(brand) >= 5 and brand in norm)
+            if hit and reg not in REAL_DOMAINS:
                 label = reg.split(".")[0]
                 if label == brand and tld not in RISKY_TLDS:
                     continue
