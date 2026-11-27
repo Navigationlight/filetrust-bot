@@ -2,8 +2,8 @@ import hashlib
 from pathlib import Path
 import magic
 from filetrust.models import FileInfo
+MAGIC_BYTES = 64 * 1024
 
-# Правила зверху вниз: перший збіг за префіксом MIME виграє
 MIME_RULES = [
     ("application/x-dosexec", "exe"),
     ("application/vnd.microsoft.portable-executable", "exe"),
@@ -44,8 +44,13 @@ def sha256_of(path: Path) -> str:
             h.update(chunk)
     return h.hexdigest()
 
+
+
+
 def inspect_file(path: Path, name: str) -> FileInfo:
-    mime = magic.from_file(str(path), mime=True)
+    with path.open("rb") as f:
+        head = f.read(MAGIC_BYTES)
+    mime = magic.from_buffer(head, mime=True)
     return FileInfo(
         name=name, path=path, size=path.stat().st_size,
         sha256=sha256_of(path), mime=mime, kind=kind_from_mime(mime),
