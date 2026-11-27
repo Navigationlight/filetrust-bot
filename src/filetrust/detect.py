@@ -4,6 +4,15 @@ import magic
 from filetrust.models import FileInfo
 
 MAGIC_BYTES = 4 * 1024
+HTML_PREFIXES = (
+    b"<!doctype html",
+    b"<html",
+    b"<head",
+    b"<body",
+    b"<script",
+    b"<meta",
+    b"<form",
+)
 
 MIME_RULES = [
     ("application/x-dosexec", "exe"),
@@ -51,7 +60,11 @@ def sha256_of(path: Path) -> str:
 def inspect_file(path: Path, name: str) -> FileInfo:
     with path.open("rb") as f:
         head = f.read(MAGIC_BYTES)
-    mime = magic.from_buffer(head, mime=True)
+    probe = head[:512].lstrip(b"\xef\xbb\xbf \t\r\n").lower()
+    if probe.startswith(HTML_PREFIXES):
+        mime = "text/html"
+    else:
+        mime = magic.from_buffer(head, mime=True)
     return FileInfo(
         name=name, path=path, size=path.stat().st_size,
         sha256=sha256_of(path), mime=mime, kind=kind_from_mime(mime),
