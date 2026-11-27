@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -7,6 +8,7 @@ from pathlib import Path
 from filetrust.config import TIMEOUT_SEC
 from filetrust.models import FileInfo, Finding
 
+log = logging.getLogger("filetrust")
 SRC_DIR = str(Path(__file__).resolve().parents[1])
 
 
@@ -21,14 +23,16 @@ async def analyze_isolated(path: Path, name: str, timeout: float = TIMEOUT_SEC):
     proc = await asyncio.create_subprocess_exec(
         sys.executable, "-m", "filetrust.worker",
         stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL, env=env)
+        stderr=asyncio.subprocess.PIPE, env=env)
     payload = json.dumps({"path": str(path), "name": name}).encode("utf-8")
     try:
-        out, _ = await asyncio.wait_for(proc.communicate(payload), timeout)
+        out, err = await asyncio.wait_for(proc.communicate(payload), timeout)
     finally:
         if proc.returncode is None:
             proc.kill()
             await proc.wait()
+    if err:
+        log.warning("worker stderr: %s", err.decode("utf-8", "replace")[-800:])
     if proc.returncode != 0:
         raise AnalysisError(f"worker exit code {proc.returncode}")
     try:

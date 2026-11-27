@@ -1,6 +1,7 @@
 
 import json
 import sys
+import traceback
 from dataclasses import asdict
 from pathlib import Path
 
@@ -26,6 +27,7 @@ def main() -> None:
         out = {"info": {**asdict(info), "path": str(info.path)},
                "findings": [asdict(f) for f in findings]}
     except BaseException as exc:    # включно з MemoryError
+        traceback.print_exc(file=sys.stderr)
         out = {"error": type(exc).__name__}
     sys.stdout.write(json.dumps(out, ensure_ascii=True))
 

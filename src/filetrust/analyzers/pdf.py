@@ -26,11 +26,7 @@ def _decode_name(raw: bytes) -> str:
 
 
 def _split_streams(data: bytes):
-    """Ділить PDF на текст поза потоками і список потоків (початок, вміст).
-
-    Це лінійний пошук через find. Регулярка stream(.*?)endstream працювала
-    квадратично: PDF на 156 КБ аналізувався понад хвилину.
-    """
+    
     outside: list[bytes] = []
     streams: list[tuple[int, bytes]] = []
     last = 0
@@ -81,7 +77,74 @@ def _object_streams(data: bytes, streams):
 
 
 
-# PDF не відкривається бібліотекою-рендерером, тому експлойт не спрацює під час аналізу.
+# Функції, які PDF-форми використовують для форматування полів (Adobe AcroForm)
+FORM_JS_RE = re.compile(
+    r"\b(?:AF[A-Z][A-Za-z_]*|event\.(?:value|rc|willCommit|target|change)"
+    r"|this\.(?:getField|calculateNow|resetForm|dirty|pageNum)"
+    r"|util\.(?:printf|printd|scand)|app\.alert)\b")
+# Усе, що виходить за межі форматування полів: мережа, запуск, обфускація, файли
+DANGER_JS_RE = re.compile(
+    r"(?:launchURL|submitForm|getURL|mailDoc|exportDataObject|importDataObject"
+    r"|eval\s*\(|unescape|fromCharCode|util\.stream|Collab\.|media\.|ActiveX"
+    r"|SOAP|Net\.|app\.(?:launch|execMenuItem)|this\.(?:saveAs|print\()|OpenDoc|XMLHttp"
+    r"|https?://|\\x[0-9a-f]{2}|%u[0-9a-f]{4})", re.I)
+OBJ_RE = re.compile(rb"(?<![0-9])(\d{1,7})\s+(\d{1,5})\s+obj\b")
+JS_LIT_RE = re.compile(rb"/JS\s*\(((?:[^()\\]|\\.){0,20000})\)", re.S)
+JS_HEX_RE = re.compile(rb"/JS\s*<([0-9A-Fa-f\s]{2,40000})>")
+JS_REF_RE = re.compile(rb"/JS\s+(\d{1,7})\s+\d{1,5}\s+R")
+
+
+def _stream_text(body: bytes) -> str:
+    try:
+        raw = zlib.decompressobj().decompress(body, MAX_DECOMP)
+    except zlib.error:
+        raw = body
+    return raw.decode("latin-1")
+
+
+def _js_sources(data: bytes, streams, texts) -> tuple[list[str], bool]:
+    """Витягує текст JavaScript. Повертає (код, чи_все_прочитано)."""
+    codes: list[str] = []
+    complete = True
+    for t in texts:
+        for m in JS_LIT_RE.finditer(t):
+            codes.append(m.group(1).decode("latin-1"))
+        for m in JS_HEX_RE.finditer(t):
+            try:
+                codes.append(bytes.fromhex(re.sub(rb"\s", b"", m.group(1)).decode()).decode("latin-1"))
+            except ValueError:
+                complete = False
+    refs = {int(m.group(1)) for t in texts for m in JS_REF_RE.finditer(t)}
+    if refs:
+        objs = {int(m.group(1)): m.end() for m in OBJ_RE.finditer(data)}
+        by_pos = sorted(streams)
+        for n in refs:
+            pos = objs.get(n)
+            if pos is None:
+                complete = False   # об'єкт у ObjStm або відсутній
+                continue
+            nxt = next(((s, b) for s, b in by_pos if s >= pos), None)
+            end = data.find(b"endobj", pos)
+            if nxt and (end == -1 or nxt[0] < end):
+                codes.append(_stream_text(nxt[1]))
+            else:   # рядковий об'єкт: /JS 5 0 R -> 5 0 obj (...)
+                m = re.match(rb"\s*\(((?:[^()\\]|\\.)*)\)", data[pos:pos + 20000], re.S)
+                if m:
+                    codes.append(m.group(1).decode("latin-1"))
+                else:
+                    complete = False
+    return codes, complete
+
+
+def _is_form_js_only(codes: list[str], complete: bool) -> bool:
+    """JS є лише форматуванням полів форми: відомі AF*-функції, без мережі й запуску."""
+    if not complete or not codes:
+        return False
+    joined = "\n".join(codes)
+    return bool(FORM_JS_RE.search(joined)) and not DANGER_JS_RE.search(joined)
+
+
+
 # Шукаємо ключові імена (/JavaScript, /Launch, /OpenAction) і приховане кодування #xx.
 def check_pdf(info: FileInfo) -> list[Finding]:
     with info.path.open("rb") as f:
@@ -112,15 +175,23 @@ def check_pdf(info: FileInfo) -> list[Finding]:
     has_launch = names["Launch"]
     auto = names["OpenAction"] or names["AA"]
     findings: list[Finding] = []
+    form_js_only = False
+    if has_js and not has_launch:
+        codes, complete = _js_sources(data, streams, texts)
+        form_js_only = _is_form_js_only(codes, complete)
 
     if has_launch:
         findings.append(Finding(
             "PDF_LAUNCH", 70,
             "PDF може запускати зовнішню програму (/Launch)"))
-    if has_js:
+    if form_js_only:
+        findings.append(Finding(
+            "PDF_FORM_JS", 5,
+            "JavaScript лише форматує поля форми (AcroForm), небезпечних викликів немає"))
+    elif has_js:
         findings.append(Finding(
             "PDF_JAVASCRIPT", 40, "Усередині PDF є JavaScript"))
-    if auto and (has_js or has_launch):
+    if auto and (has_launch or (has_js and not form_js_only)):
         findings.append(Finding(
             "PDF_AUTO_RUN", 30,
             "Дії виконуються автоматично під час відкриття (/OpenAction, /AA)"))

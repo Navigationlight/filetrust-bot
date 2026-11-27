@@ -5,3 +5,5 @@ python-magic; sys_platform != "win32"
 oletools
 py7zr
 pytest
+opencv-python-headless
+numpy

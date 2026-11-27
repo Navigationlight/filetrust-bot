@@ -5,7 +5,8 @@ import time
 from pathlib import Path
 
 from aiogram import Router, F, Bot
-from aiogram.exceptions import TelegramAPIError
+from aiogram.enums import ParseMode
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.filters import Command, CommandStart
 from aiogram.types import (CallbackQuery, InlineKeyboardButton,
                            InlineKeyboardMarkup, Message)
@@ -13,7 +14,7 @@ from aiogram.types import (CallbackQuery, InlineKeyboardButton,
 from filetrust.analyzers.urlcheck import check_url, extract_urls
 from filetrust.config import DB_PATH, MAX_FILE_MB
 from filetrust.isolated import analyze_isolated
-from filetrust.report import format_links, format_report, format_short, limit, no_ping
+from filetrust.report import format_links, format_report, format_short, limit, no_ping, strip_tags
 from filetrust.scoring.explain import assess
 from filetrust.store import SettingsStore
 
@@ -28,7 +29,7 @@ _store: SettingsStore | None = None
 HELP_PRIVATE = (
     "Надішліть мені файл або посилання, і я перевірю, чи можна їм довіряти.\n"
     "Файл не запускається, посилання не відкривається: аналізується лише вміст і адреса.\n\n"
-    "Групи: додайте мене в чат, і  буду мовчки перевіряти файли та посилання, "
+    "Групи: додайте мене в чат, і я буду мовчки перевіряти файли та посилання, "
     "а писати лише коли знайду ризик. Налаштування: /settings у групі.")
 HELP_GROUP = (
     "Я перевіряю файли та посилання і пишу лише коли бачу ризик.\n"
@@ -63,7 +64,15 @@ def cooldown_ok(chat_id: int, user_id: int) -> tuple[bool, int]:
 async def reply(message: Message, text: str, group: bool) -> None:
     """У групах без сповіщення, як відповідь на повідомлення. Збій відправки не валить бота."""
     try:
-        await message.reply(text, disable_notification=group)
+        await message.reply(text, parse_mode=ParseMode.HTML, disable_notification=group)
+    except TelegramBadRequest as exc:
+        if "parse" not in str(exc).lower():
+            log.warning("не вдалося надіслати відповідь: %s", exc)
+            return
+        try:                          # розмітку не прийнято: надсилаємо простим текстом
+            await message.reply(strip_tags(text), parse_mode=None, disable_notification=group)
+        except TelegramAPIError as exc2:
+            log.warning("не вдалося надіслати відповідь: %s", exc2)
     except TelegramAPIError as exc:
         log.warning("не вдалося надіслати відповідь: %s", exc)
 
@@ -73,7 +82,7 @@ async def scan_document(bot: Bot, doc):
     if doc.file_size and doc.file_size > MAX_FILE_MB * 1024 * 1024:
         return f"Файл завеликий (максимум {MAX_FILE_MB} МБ)."
     async with _slots:
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             path = Path(tmp) / "sample.bin"       # фіксована назва, не від користувача
             try:
                 await bot.download(doc, destination=path)
@@ -204,6 +213,8 @@ async def toggle(cb: CallbackQuery, bot: Bot):
 
 @router.message(Command("check"))
 async def check(message: Message, bot: Bot):
+    if message.from_user is None:
+        return
     target = message.reply_to_message
     if target is None:
         await reply(message, "Відповідайте цією командою на повідомлення з файлом чи посиланням.",

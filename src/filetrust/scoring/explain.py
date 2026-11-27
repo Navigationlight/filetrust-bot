@@ -31,10 +31,10 @@ _CATEGORY = {
     # структура контейнера
     "ARCHIVE_ENCRYPTED": CONT, "ARCHIVE_BOMB": CONT,
     "ARCHIVE_PATH_TRAVERSAL": CONT, "ARCHIVE_UNREADABLE": CONT,
-    "PDF_EMBEDDED_FILE": CONT, "PDF_RICHMEDIA": CONT,
+    "PDF_EMBEDDED_FILE": CONT, "PDF_RICHMEDIA": CONT, "PDF_FORM_JS": OTHER,
 }
 
-# перевірка посилань (analyzers/urlcheck.py)
+
 for _id in ("LINK_USERINFO", "LINK_IP", "LINK_SHORTENER", "LINK_PUNYCODE", "LINK_NO_TLS",
             "LINK_RISKY_TLD", "LINK_BRAND", "LINK_LONG_HOST", "LINK_TEXT_MISMATCH",
             "LINK_ODD_PORT"):
@@ -72,7 +72,7 @@ def _chains(findings: list[Finding]) -> list[Finding]:
     if "ARCHIVE_ENCRYPTED" in ids and cats & {MASK, CODE}:
         out.append(Finding(
             "CHAIN_LOCKED_PAYLOAD", 15,
-            "Архів під паролем разом із підозрілим вмістом: так обходять автоматичні перевірки"))
+            "Архів під паролем разом із підозрілим вмістом"))
     if PHISH in cats and CODE in cats:
         out.append(Finding(
             "CHAIN_PHISH_CODE", 10,
