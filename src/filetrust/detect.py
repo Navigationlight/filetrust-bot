@@ -2,7 +2,8 @@ import hashlib
 from pathlib import Path
 import magic
 from filetrust.models import FileInfo
-MMAGIC_BYTES = 4 * 1024
+
+MAGIC_BYTES = 4 * 1024
 
 MIME_RULES = [
     ("application/x-dosexec", "exe"),
@@ -30,6 +31,7 @@ MIME_RULES = [
     ("text/", "text"),
 ]
 
+
 def kind_from_mime(mime: str) -> str:
     m = mime.lower()
     for prefix, kind in MIME_RULES:
@@ -37,14 +39,13 @@ def kind_from_mime(mime: str) -> str:
             return kind
     return "unknown"
 
+
 def sha256_of(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as f:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             h.update(chunk)
     return h.hexdigest()
-
-
 
 
 def inspect_file(path: Path, name: str) -> FileInfo:
