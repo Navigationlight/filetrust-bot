@@ -2,7 +2,7 @@ import hashlib
 from pathlib import Path
 import magic
 from filetrust.models import FileInfo
-MAGIC_BYTES = 64 * 1024
+MMAGIC_BYTES = 4 * 1024
 
 MIME_RULES = [
     ("application/x-dosexec", "exe"),
