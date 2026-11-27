@@ -18,13 +18,17 @@ def _is_external(url: str) -> bool:
     return url.strip().lower().startswith(("http://", "https://", "//"))
 
 
+MAX_TAG_LEN = 4096
+
+
 def _sanitize(text: str) -> str:
     parts = text.split("<")
     out = [parts[0]]
     for frag in parts[1:]:
         c, c2 = frag[:1], frag[1:2]
         is_tag = (c.isascii() and c.isalpha()) or (c == "/" and c2.isascii() and c2.isalpha())
-        out.append(("<" if is_tag and ">" in frag else "&lt;") + frag)
+        gt = frag.find(">") if is_tag else -1
+        out.append(("<" if 0 < gt <= MAX_TAG_LEN else "&lt;") + frag)
     return "".join(out)
 
 
