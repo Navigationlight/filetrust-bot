@@ -5,6 +5,9 @@ from filetrust.analyzers.links import bad_link_reason
 from filetrust.models import FileInfo, Finding
 
 MAX_READ = 5 * 1024 * 1024
+MAX_TAG_LEN = 4096
+MAX_UNCLOSED_TAGS = 2000
+
 BASE64_RE = re.compile(r"[A-Za-z0-9+/=]{2000,}")
 JS_REDIRECT_RE = re.compile(
     r'''location(?:\.href)?\s*=\s*["'](https?://[^"']+)["']''')
@@ -18,10 +21,13 @@ def _is_external(url: str) -> bool:
     return url.strip().lower().startswith(("http://", "https://", "//"))
 
 
-MAX_TAG_LEN = 4096
-
-
 def _sanitize(text: str) -> str:
+    # Защита от HTML-бомб с сотнями тысяч незакрытых '<' (O(N^2) внутри CPython HTMLParser)
+    if text.count("<") - text.count(">") > MAX_UNCLOSED_TAGS:
+        text = text[:65536]
+        if text.count("<") - text.count(">") > MAX_UNCLOSED_TAGS:
+            return ""
+
     parts = text.split("<")
     out = [parts[0]]
     for frag in parts[1:]:
@@ -81,14 +87,12 @@ def check_html(info: FileInfo) -> list[Finding]:
     with info.path.open("rb") as f:
         text = f.read(MAX_READ).decode("utf-8", errors="ignore")
 
-    # Защита от HTML-бомб с сотнями тысяч незакрытых '<' (O(N^2) в CPython HTMLParser)
-    if text.count("<") - text.count(">") > 2000:
-        text = text[:65536]
-
     scan = _Scan()
     try:
-        scan.feed(_sanitize(text))
-        scan.close()
+        sanitized = _sanitize(text)
+        if sanitized:
+            scan.feed(sanitized)
+            scan.close()
     except Exception:
         pass  # зламана розмітка не повинна валити бота
 
