@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 @dataclass
@@ -15,3 +15,4 @@ class FileInfo:
     sha256: str
     mime: str    #  libmagic
     kind: str    #  pdf, zip, ooxml, exe
+    meta: dict = field(default_factory=dict)   
