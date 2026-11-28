@@ -48,5 +48,5 @@ def test_report_groups_by_category():
     a = assess([Finding("DOUBLE_EXT", 60, "Подвійне розширення"),
                 Finding("EXEC_FILE", 60, "Це виконуваний файл")])
     text = format_report(info, a.total, a.verdict, a.findings, a.story)
-    assert "Маскування:" in text and "Виконання коду:" in text and "Комбінація:" in text
-    assert "Висновок:" in text and "Що робити:" in text
+    assert "Маскування" in text and "Виконання коду" in text and "Комбінація" in text
+    assert "Висновок." in text and "Що робити." in text
