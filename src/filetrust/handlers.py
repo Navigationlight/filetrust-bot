@@ -12,8 +12,9 @@ from aiogram.types import (CallbackQuery, InlineKeyboardButton,
                            InlineKeyboardMarkup, Message)
 
 from filetrust.analyzers.urlcheck import check_url, extract_urls
-from filetrust.config import DB_PATH, MAX_FILE_MB, VT_API_KEY
+from filetrust.config import DB_PATH, MAX_FILE_MB, SAFE_BROWSING_KEY, VT_API_KEY
 from filetrust.vt import lookup as vt_lookup
+from filetrust import sb
 from filetrust.isolated import analyze_isolated
 from filetrust.report import format_links, format_report, format_short, limit, no_ping, strip_tags
 from filetrust.scoring.explain import assess
@@ -130,7 +131,8 @@ async def handle_text(message: Message, text: str, entities, force: bool = False
         if not group or force:
             await reply(message, "Не знайшов посилань. Надішліть посилання або файл.", group)
         return
-    results = [(u, assess(check_url(u, shown))) for u, shown in urls]
+    threats = await sb.lookup([u for u, _ in urls], SAFE_BROWSING_KEY) or {}
+    results = [(u, assess(check_url(u, shown) + sb.findings_for(threats.get(u)))) for u, shown in urls]
     if not group:
         await reply(message, format_links(results), False)
         return
@@ -141,7 +143,7 @@ async def handle_text(message: Message, text: str, entities, force: bool = False
         await reply(message, "🟢 Явних ознак підміни в посиланні немає.", True)
 
 
-# ---------- команди ----------
+
 
 @router.message(CommandStart())
 @router.message(Command("help"))
@@ -226,7 +228,6 @@ async def check(message: Message, bot: Bot):
     else:
         await handle_text(message, target.text or target.caption or "",
                           target.entities or target.caption_entities, force=True)
-
 
 
 
