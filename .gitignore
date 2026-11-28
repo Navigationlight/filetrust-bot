@@ -8,3 +8,4 @@ local_samples/
 .hypothesis/
 .pytest_cache/
 demo/samples/
+data/intel/
