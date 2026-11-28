@@ -3,6 +3,7 @@ import json
 import os
 import struct
 import zipfile
+from html.parser import HTMLParser
 from pathlib import Path
 
 from filetrust.models import FileInfo, Finding
@@ -10,7 +11,32 @@ from filetrust.pipeline import analyze
 from filetrust.profile import build
 from filetrust.report import entropy_label, format_links, format_report, url_rows
 from filetrust.scoring.explain import assess
-from tests.test_report_html import valid
+
+
+ALLOWED = {"b", "i", "code", "pre", "blockquote", "a"}
+
+
+class _Checker(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.stack, self.bad = [], []
+
+    def handle_starttag(self, tag, attrs):
+        if tag not in ALLOWED:
+            self.bad.append(tag)
+        self.stack.append(tag)
+
+    def handle_endtag(self, tag):
+        if not self.stack or self.stack.pop() != tag:
+            self.bad.append("/" + tag)
+
+
+def valid(text: str) -> bool:
+    c = _Checker()
+    c.feed(text)
+    c.close()
+    return not c.bad and not c.stack
+
 
 
 def run(path: Path, name: str):
