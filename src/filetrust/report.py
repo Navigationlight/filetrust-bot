@@ -9,13 +9,14 @@ import re
 
 from filetrust.models import FileInfo, Finding
 from filetrust.scoring.explain import ORDER, category_of
+from filetrust.scoring.mitre import technique, techniques
 
 URL_RE = re.compile(r"https?://[^\s)»]+")
 
 ADVICE = {
-    "ВИСОКИЙ": "Що робити: не відкривайте файл, видаліть його, запитайте відправника іншим каналом.",
-    "ПІДОЗРІЛО": "Що робити: відкривайте лише якщо впевнені у відправнику, бажано у пісочниці.",
-    "НИЗЬКИЙ": "Що робити: явних ознак загрози немає, але обережність не зайва.",
+    "ВИСОКИЙ": "Що робити. Не відкривайте файл, видаліть його, запитайте відправника іншим каналом.",
+    "ПІДОЗРІЛО": "Що робити. Відкривайте лише якщо впевнені у відправнику, бажано у пісочниці.",
+    "НИЗЬКИЙ": "Що робити. Явних ознак загрози немає, але обережність не зайва.",
 }
 ICONS = {"Маскування": "🎭", "Виконання коду": "⚙️", "Фішинг": "🎣",
          "Контейнер": "📦", "Інше": "▫️", "Комбінація": "🔗"}
@@ -81,59 +82,83 @@ def _advice(verdict: str) -> str:
     return ""
 
 
+def plain(text: str) -> str:
+    """Людський текст без двокрапок і тире: у чаті так читається легше."""
+    t = re.sub(r"\s*[:]\s+", ", ", str(text))
+    t = re.sub(r"\s+[\u2014\u2013-]\s+", ", ", t)
+    return t.replace("\u2014", ",").rstrip(":")
+
+
+def _vt_line(vt: dict | None) -> str:
+    if not vt:
+        return ""
+    if vt.get("unknown"):
+        return "VirusTotal  у базі немає"
+    return f"VirusTotal  {vt['bad']} із {vt['total']} движків"
+
+
 def format_report(info: FileInfo, total: int, verdict: str,
-                  findings: list[Finding], story: str = "") -> str:
-    """Повний звіт для особистого чату: вердикт, характеристики, висновок, знахідки, техдеталі."""
+                  findings: list[Finding], story: str = "", vt: dict | None = None) -> str:
+    """Особистий чат. Зверху вердикт і картка файлу, далі індикатори, техніка у блоці, що розгортається."""
     sha = info.sha256
+    card = [f"Тип       {info.kind} ({info.mime})",
+            f"Розмір    {human_size(info.size)}",
+            f"Індикаторів  {len(findings)}"]
+    if vt_line := _vt_line(vt):
+        card.append(vt_line)
     head = [
         f"<b>{esc(verdict)}</b>",
         f"<code>{bar(total)} {total}/100</code>",
         "",
         f"📄 <b>{esc(info.name)}</b>",
-        "<pre>"
-        f"Тип      {esc(info.kind)} ({esc(info.mime)})\n"
-        f"Розмір   {human_size(info.size)}\n"
-        f"Правил   {len(findings)} спрацювало"
-        "</pre>",
-        f"SHA256: <code>{sha}</code>",
+        "<pre>" + esc("\n".join(card)) + "</pre>",
+        f"🔑 SHA256\n<code>{sha}</code>",
         f'<a href="https://www.virustotal.com/gui/file/{sha}">Знайти за хешем у VirusTotal</a>',
     ]
     blocks = ["\n".join(head)]
     if story:
-        blocks.append(f"<blockquote>{esc(story)}</blockquote>")
+        blocks.append(f"<blockquote>{esc(plain(story))}</blockquote>")
 
     if findings:
-        n = 0
+        top = sorted(findings, key=lambda f: -f.points)[:3]
+        blocks.append("<b>Головне</b>\n" + "\n".join(
+            f"• {esc(defang(plain(f.text)))}" for f in top))
+        lines = ["<b>Індикатори</b>"]
         for cat in ORDER:
             group = [f for f in findings if category_of(f.id) == cat]
-            if not group:
-                continue
-            lines = [f"{ICONS.get(cat, '▫️')} <b>{esc(cat)}:</b>"]
-            for f in group:
-                n += 1
-                lines.append(f"{n}. {esc(defang(f.text))} <i>(+{f.points})</i>")
-            blocks.append("\n".join(lines))
-        blocks.append(_tech_block(findings, total))
+            if group:
+                chips = "  ".join(f"{f.id} +{f.points}" for f in group[:6])
+                more = f"  ще {len(group) - 6}" if len(group) > 6 else ""
+                lines.append(f"{ICONS.get(cat, '▫️')} {esc(cat)}\n<code>{esc(chips)}{more}</code>")
+        blocks.append("\n".join(lines))
+        blocks.append(_tech_block(findings, total, vt))
     else:
         blocks.append("Підозрілих ознак не знайдено.\n"
-                      "<i>Це не гарантія безпеки, а лише результат наших перевірок.</i>")
+                      "<i>Це не гарантія безпеки, а результат наших перевірок.</i>")
 
     advice = _advice(verdict)
     if advice:
-        blocks.append(f"<blockquote>{esc(advice)}</blockquote>")
-    # технічний блок і порада важливіші за хвіст довгого списку: ставимо їх у кінець бюджету
+        blocks.append(f"<blockquote>{esc(plain(advice))}</blockquote>")
     return fit_keep_tail(blocks)
 
 
-def _tech_block(findings: list[Finding], total: int) -> str:
-    """Для технарів: ідентифікатори правил, бали, категорії у блоці, що розгортається."""
+def _tech_block(findings: list[Finding], total: int, vt: dict | None = None) -> str:
+    """Для технарів. Правила, бали, ATT&CK, повні пояснення, у блоці, що розгортається."""
     rows = []
     for f in sorted(findings, key=lambda x: -x.points)[:TECH_LINES]:
-        rows.append(f"{f.id:<26} +{f.points:<3} {category_of(f.id)}")
+        t = technique(f.id)
+        rows.append(f"{f.id:<26} +{f.points:<3} {t[0] if t else ''}")
     if len(findings) > TECH_LINES:
-        rows.append(f"… ще {len(findings) - TECH_LINES}")
+        rows.append(f"ще {len(findings) - TECH_LINES}")
     raw = sum(f.points for f in findings)
-    rows.append(f"Сума {raw}, стеля 100 → {total}")
+    rows.append(f"Сума {raw}, стеля 100, підсумок {total}")
+    tt = techniques(findings)
+    if tt:
+        rows.append("")
+        rows.append("MITRE ATT&CK")
+        rows += [f"{tid}  {name}" for tid, name in tt]
+    if vt and not vt.get("unknown"):
+        rows += ["", f"VirusTotal шкідливих {vt['malicious']}, підозрілих {vt['suspicious']}, всього {vt['total']}"]
     return "🔬 <b>Технічні деталі</b>\n<blockquote expandable>" + esc("\n".join(rows)) + "</blockquote>"
 
 
