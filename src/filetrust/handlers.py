@@ -12,7 +12,8 @@ from aiogram.types import (CallbackQuery, InlineKeyboardButton,
                            InlineKeyboardMarkup, Message)
 
 from filetrust.analyzers.urlcheck import check_url, extract_urls
-from filetrust.config import DB_PATH, MAX_FILE_MB
+from filetrust.config import DB_PATH, MAX_FILE_MB, VT_API_KEY
+from filetrust.vt import lookup as vt_lookup
 from filetrust.isolated import analyze_isolated
 from filetrust.report import format_links, format_report, format_short, limit, no_ping, strip_tags
 from filetrust.scoring.explain import assess
@@ -113,7 +114,8 @@ async def handle_document(bot: Bot, message: Message, doc, force: bool = False) 
         return
     info, a = result
     if not group:
-        await reply(message, format_report(info, a.total, a.verdict, a.findings, a.story), False)
+        vt = await vt_lookup(info.sha256, VT_API_KEY)
+        await reply(message, format_report(info, a.total, a.verdict, a.findings, a.story, vt), False)
     elif a.total >= 30 or force or not s.quiet:
         await reply(message, format_short(info.name, a), True)
 
@@ -226,7 +228,7 @@ async def check(message: Message, bot: Bot):
                           target.entities or target.caption_entities, force=True)
 
 
-# ---------- звичайні повідомлення ----------
+
 
 @router.message(F.document)
 async def on_file(message: Message, bot: Bot):
