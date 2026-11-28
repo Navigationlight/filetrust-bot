@@ -7,3 +7,4 @@ __pycache__/
 local_samples/
 .hypothesis/
 .pytest_cache/
+demo/samples/
