@@ -17,7 +17,7 @@ class AnalysisError(Exception):
 
 
 async def analyze_isolated(path: Path, name: str, timeout: float = TIMEOUT_SEC):
-    """Аналіз в окремому процесі. Після таймауту процес гарантовано вбивається."""
+    
     env = dict(os.environ)
     env["PYTHONPATH"] = os.pathsep.join(filter(None, [SRC_DIR, env.get("PYTHONPATH")]))
     proc = await asyncio.create_subprocess_exec(
@@ -43,5 +43,6 @@ async def analyze_isolated(path: Path, name: str, timeout: float = TIMEOUT_SEC):
         raise AnalysisError(data["error"])
     i = data["info"]
     info = FileInfo(name=i["name"], path=Path(i["path"]), size=i["size"],
-                    sha256=i["sha256"], mime=i["mime"], kind=i["kind"])
+                    sha256=i["sha256"], mime=i["mime"], kind=i["kind"],
+                    meta=i.get("meta") or {})
     return info, [Finding(**f) for f in data["findings"]]
