@@ -56,7 +56,8 @@ def cooldown_ok(chat_id: int, user_id: int) -> tuple[bool, int]:
         for k in [k for k, t in _cooldown.items() if now - t > COOLDOWN_SEC * 10]:
             del _cooldown[k]
     key = (chat_id, user_id)
-    wait = COOLDOWN_SEC - (now - _cooldown.get(key, 0))
+    last = _cooldown.get(key)       # None, якщо ще не було запитів: не порівнюємо з нулем годинника
+    wait = COOLDOWN_SEC - (now - last) if last is not None else 0
     if wait > 0:
         return False, int(wait) + 1
     _cooldown[key] = now
