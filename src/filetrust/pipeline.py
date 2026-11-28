@@ -2,6 +2,7 @@ import logging
 from pathlib import Path
 from typing import Callable
 
+from filetrust import profile
 from filetrust.analyzers import common, archive, pdf, html_page, office, image, pe
 from filetrust.detect import inspect_file
 from filetrust.models import FileInfo, Finding
@@ -25,6 +26,7 @@ ANALYZERS: dict[str, list[Analyzer]] = {
 
 def analyze(path: Path, name: str) -> tuple[FileInfo, list[Finding]]:
     info = inspect_file(path, name)
+    info.meta = profile.build(info)
     findings: list[Finding] = []
     # збій однієї перевірки не повинен губити результат інших
     for fn in [common.check] + ANALYZERS.get(info.kind, []):
