@@ -4,6 +4,7 @@ from urllib.parse import urlsplit
 
 from filetrust.analyzers.common import EXEC_EXTS
 from filetrust.analyzers.links import SHORTENERS
+from filetrust import intel
 from filetrust.models import Finding
 
 MAX_URLS = 10
@@ -98,6 +99,8 @@ def check_url(url: str, shown: str | None = None) -> list[Finding]:
     out: list[Finding] = []
     reg = registered_domain(host)
     tld = host.rsplit(".", 1)[-1]
+    intel_db = intel.get()
+    out += intel_db.findings(host, url, reg)
 
     if "@" in parts.netloc:
         out.append(Finding(
@@ -121,7 +124,7 @@ def check_url(url: str, shown: str | None = None) -> list[Finding]:
         norm = host.translate(LEET).replace("-", "")   # paypa1, mono-bank
         for brand in BRANDS:
             hit = brand in host or (len(brand) >= 5 and brand in norm)
-            if hit and reg not in REAL_DOMAINS:
+            if hit and reg not in REAL_DOMAINS and not intel_db.is_popular(reg):
                 label = reg.split(".")[0]
                 if label == brand and tld not in RISKY_TLDS:
                     continue
