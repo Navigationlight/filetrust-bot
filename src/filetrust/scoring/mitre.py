@@ -1,4 +1,5 @@
 
+"""Відповідність правил MITRE ATT&CK (Enterprise): ідентифікатор техніки та коротка назва."""
 from filetrust.models import Finding
 
 _M = {
@@ -35,6 +36,14 @@ _M = {
     "PDF_SUSPICIOUS_LINK": ("T1566.002", "Phishing, Spearphishing Link"),
     "IMAGE_HIDDEN_FILE": ("T1027.009", "Embedded Payloads"),
     "IMAGE_QR_LINK": ("T1566.002", "Phishing, Spearphishing Link"),
+    "PE_PACKED": ("T1027.002", "Software Packing"),
+    "PE_WX_SECTION": ("T1027", "Obfuscated Files or Information"),
+    "PE_EP_ANOMALY": ("T1027", "Obfuscated Files or Information"),
+    "PE_OVERLAY": ("T1027.009", "Embedded Payloads"),
+    "PE_FEW_IMPORTS": ("T1027.007", "Dynamic API Resolution"),
+    "PE_INJECTION_APIS": ("T1055", "Process Injection"),
+    "PE_DOWNLOADER_APIS": ("T1105", "Ingress Tool Transfer"),
+    "PE_KEYLOG_APIS": ("T1056.001", "Keylogging"),
     "LINK_EXEC_DOWNLOAD": ("T1204.001", "User Execution, Malicious Link"),
 }
 
