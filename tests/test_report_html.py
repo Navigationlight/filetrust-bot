@@ -1,4 +1,4 @@
-"""Формат відповідей: Telegram HTML, екранування, ліміт, відсутність клікабельних посилань."""
+
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -54,7 +54,7 @@ def test_long_report_stays_valid_and_within_limit():
     a = assess([Finding("EXEC_FILE", 60, "довгий <текст> & " * 40) for _ in range(80)])
     text = format_report(info("n" * 300), a.total, a.verdict, a.findings, a.story)
     assert valid(text) and len(text) <= 4100
-    assert "Що робити:" in text and "Технічні деталі" in text
+    assert "Що робити." in text and "Технічні деталі" in text
 
 
 def test_links_report_has_no_clickable_urls():
@@ -72,3 +72,30 @@ def test_short_report_valid_and_no_ping():
 
 def test_strip_tags_fallback():
     assert strip_tags("<b>a &lt;b&gt;</b>") == "a <b>"
+
+
+def test_report_has_mitre_indicators_and_no_colon_dash_prose():
+    from filetrust.scoring.mitre import techniques
+    f = [Finding("DOUBLE_EXT", 25, "Подвійне розширення: файл вдає документ - це небезпечно"),
+         Finding("EXEC_FILE", 60, "Це виконуваний файл")]
+    a = assess(f)
+    text = format_report(info(), a.total, a.verdict, a.findings, a.story)
+    assert valid(text)
+    assert "T1036.007" in text and "T1204.002" in text and "MITRE ATT&amp;CK" in text
+    assert "Подвійне розширення, файл вдає документ, це небезпечно" in text
+    assert [t[0] for t in techniques(f)] == ["T1036.007", "T1204.002"]
+    assert len(text) <= 4000
+
+
+def test_report_shows_virustotal_result():
+    a = assess([Finding("EXEC_FILE", 60, "x")])
+    text = format_report(info(), a.total, a.verdict, a.findings, a.story,
+                         {"malicious": 5, "suspicious": 1, "bad": 6, "total": 70})
+    assert "6 із 70" in text and valid(text)
+
+
+def test_vt_parse():
+    from filetrust.vt import parse
+    p = {"data": {"attributes": {"last_analysis_stats": {"malicious": 3, "suspicious": 0, "harmless": 60, "undetected": 7}}}}
+    assert parse(p) == {"malicious": 3, "suspicious": 0, "bad": 3, "total": 70}
+    assert parse({}) is None
