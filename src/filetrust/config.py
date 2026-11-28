@@ -8,3 +8,4 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 MAX_FILE_MB = 20
 TIMEOUT_SEC = 60      
 VT_API_KEY = os.getenv("VT_API_KEY", "")   
+SAFE_BROWSING_KEY = os.getenv("SAFE_BROWSING_KEY", "")  
