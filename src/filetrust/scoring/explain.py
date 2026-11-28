@@ -43,7 +43,7 @@ for _id in ("LINK_EXEC_DOWNLOAD", "LINK_DANGEROUS_SCHEME"):
     _CATEGORY[_id] = CODE
 
 _STORY = {
-    MASK: "файл маскується під інший тип",
+    MASK: "маскується під інший тип",
     CODE: "містить код, який може виконатись",
     PHISH: "веде на підозрілі адреси або збирає дані",
     CONT: "має ризиковий вміст чи структуру контейнера",
@@ -97,5 +97,5 @@ def assess(findings: list[Finding]) -> Assessment:
         c = category_of(f.id)
         cats[c] = cats.get(c, 0) + f.points
     parts = [_STORY[c] for c in (MASK, CODE, PHISH, CONT) if c in cats]
-    story = ("Висновок: " + ", ".join(parts) + ".") if parts else ""
+    story = ("Висновок. Файл " + ", ".join(parts) + ".") if parts else ""
     return Assessment(total, verdict, all_f, cats, story)
