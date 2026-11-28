@@ -2,7 +2,7 @@ import logging
 from pathlib import Path
 from typing import Callable
 
-from filetrust.analyzers import common, archive, pdf, html_page, office, image
+from filetrust.analyzers import common, archive, pdf, html_page, office, image, pe
 from filetrust.detect import inspect_file
 from filetrust.models import FileInfo, Finding
 
@@ -18,6 +18,7 @@ ANALYZERS: dict[str, list[Analyzer]] = {
     "pdf": [pdf.check_pdf],
     "html": [html_page.check_html],
     "image": [image.check_image],
+    "exe": [pe.check_pe],
 }
 
 
